@@ -1,0 +1,1430 @@
+{
+  "schema_version": "1.0.0",
+  "document": {
+    "title": "LA32R 基础整数与基础特权指令语义（RTL 核对版）",
+    "isa": "LoongArch32 Reduced",
+    "manual_version": "V1.04",
+    "manual_date": "2025-02",
+    "source_pdf": "龙架构32位精简版开发手册.pdf",
+    "source_markdown": "la32r.md",
+    "language": "zh-CN",
+    "scope": [
+      "base_integer",
+      "base_privileged"
+    ],
+    "excluded": [
+      "base_floating_point",
+      "instruction_binary_encoding"
+    ],
+    "encoding_note": "本文件面向功能与语义核对。encoding 是可选扩展字段；由于转换稿附录 B 存在跨页错位，首版不转录二进制编码，译码常量应从原 PDF 复核。"
+  },
+  "schema": {
+    "required_instruction_fields": [
+      "mnemonic",
+      "assembly",
+      "section",
+      "category",
+      "operand_form",
+      "privilege_profile",
+      "operation",
+      "reads",
+      "writes",
+      "exception_profile"
+    ],
+    "optional_instruction_fields": [
+      "alias_of",
+      "immediate",
+      "memory",
+      "control_flow",
+      "side_effects",
+      "undefined_behavior",
+      "rtl_checks",
+      "notes",
+      "encoding"
+    ],
+    "extension_rule": "新增指令集时向 instruction_sets 追加对象；优先复用 profiles 和 operand_forms，不足时新增具名定义。每个具体助记符使用独立 instruction 对象。"
+  },
+  "architectural_state": {
+    "instruction_width_bits": 32,
+    "gr_count": 32,
+    "gr_width_bits": 32,
+    "gr_zero": "r0 reads as 0 and discards writes",
+    "pc_width_bits": 32,
+    "endianness": "little",
+    "privilege_levels": [
+      0,
+      3
+    ],
+    "llbit_width_bits": 1,
+    "stable_counter_width_bits": 64,
+    "csr_width_bits": 32,
+    "tlb_entry_model": "dual-page"
+  },
+  "execution_model": {
+    "normal_next_pc": "PC_old + 4 unless a taken control-flow instruction or exception supplies another PC",
+    "source_before_destination": "All architectural source values are sampled before destination writes of the same instruction.",
+    "r0_rule": "Writing r0 suppresses only the register-file write; all other effects and exceptions still occur.",
+    "precise_exception_rule": "On a synchronous instruction exception, normal destination and memory side effects are suppressed and the faulting PC is recorded by the exception mechanism.",
+    "memory_exception_priority": "For an aligned-required data access, ALE has priority over its TLB/page exception.",
+    "tlb_exception_exclusivity": "One memory access raises at most one TLB/page-related exception."
+  },
+  "notation": {
+    "GR[x]": "32-bit general register x",
+    "CSR[x]": "32-bit control/status register x",
+    "SEXT(x,n)": "sign-extend x to n bits",
+    "ZEXT(x,n)": "zero-extend x to n bits",
+    "LOW32(x)": "x[31:0]",
+    "PC_old": "address of the current instruction before architectural PC update",
+    "MEMn[a]": "little-endian n-bit memory access at address a"
+  },
+  "profiles": {
+    "privilege": {
+      "non_privileged": {
+        "allowed_plv": [
+          0,
+          3
+        ],
+        "violation": null
+      },
+      "plv0_only": {
+        "allowed_plv": [
+          0
+        ],
+        "violation": "IPE"
+      },
+      "cacop_conditional": {
+        "allowed_plv": [
+          0
+        ],
+        "plv3_allowed_when": "code[4:3] == 2 (Hit operation)",
+        "violation": "IPE"
+      }
+    },
+    "exceptions": {
+      "none": [],
+      "load_byte": [
+        "TLBR",
+        "PIL",
+        "PPI"
+      ],
+      "load_aligned": [
+        "ALE",
+        "TLBR",
+        "PIL",
+        "PPI"
+      ],
+      "store_byte": [
+        "TLBR",
+        "PIS",
+        "PPI",
+        "PME"
+      ],
+      "store_aligned": [
+        "ALE",
+        "TLBR",
+        "PIS",
+        "PPI",
+        "PME"
+      ],
+      "prefetch": [],
+      "atomic_load_word": [
+        "ALE",
+        "TLBR",
+        "PIL",
+        "PPI"
+      ],
+      "atomic_store_word": [
+        "ALE",
+        "TLBR",
+        "PIS",
+        "PPI",
+        "PME"
+      ],
+      "syscall": [
+        "SYS"
+      ],
+      "break": [
+        "BRK"
+      ],
+      "plv0_instruction": [
+        "IPE when current PLV is not 0"
+      ],
+      "cacop": [
+        "IPE for non-Hit operation outside PLV0",
+        "Hit operation may raise address-translation/TLB page exceptions"
+      ],
+      "invtlb": [
+        "IPE when current PLV is not 0",
+        "INE when op is not 0x0..0x6"
+      ]
+    },
+    "memory": {
+      "integer_load": {
+        "address": "GR[rj] + SEXT(si12,32)",
+        "translation": "AddressTranslation(vaddr)",
+        "byte_order": "little"
+      },
+      "integer_store": {
+        "address": "GR[rj] + SEXT(si12,32)",
+        "translation": "AddressTranslation(vaddr)",
+        "byte_order": "little"
+      },
+      "llsc": {
+        "address": "GR[rj] + SEXT(si14 << 2,32)",
+        "alignment_bytes": 4,
+        "required_memory_type": "Cached",
+        "non_cached_behavior": "undefined"
+      }
+    }
+  },
+  "operand_forms": {
+    "gr3": [
+      {
+        "name": "rd",
+        "kind": "gr",
+        "access": "write"
+      },
+      {
+        "name": "rj",
+        "kind": "gr",
+        "access": "read"
+      },
+      {
+        "name": "rk",
+        "kind": "gr",
+        "access": "read"
+      }
+    ],
+    "gr2_si12": [
+      {
+        "name": "rd",
+        "kind": "gr",
+        "access": "write"
+      },
+      {
+        "name": "rj",
+        "kind": "gr",
+        "access": "read"
+      },
+      {
+        "name": "si12",
+        "kind": "immediate",
+        "access": "read",
+        "bits": 12,
+        "signed": true
+      }
+    ],
+    "store_gr2_si12": [
+      {
+        "name": "rd",
+        "kind": "gr",
+        "access": "read"
+      },
+      {
+        "name": "rj",
+        "kind": "gr",
+        "access": "read"
+      },
+      {
+        "name": "si12",
+        "kind": "immediate",
+        "access": "read",
+        "bits": 12,
+        "signed": true
+      }
+    ],
+    "gr2_ui12": [
+      {
+        "name": "rd",
+        "kind": "gr",
+        "access": "write"
+      },
+      {
+        "name": "rj",
+        "kind": "gr",
+        "access": "read"
+      },
+      {
+        "name": "ui12",
+        "kind": "immediate",
+        "access": "read",
+        "bits": 12,
+        "signed": false
+      }
+    ],
+    "gr2_ui5": [
+      {
+        "name": "rd",
+        "kind": "gr",
+        "access": "write"
+      },
+      {
+        "name": "rj",
+        "kind": "gr",
+        "access": "read"
+      },
+      {
+        "name": "ui5",
+        "kind": "immediate",
+        "access": "read",
+        "bits": 5,
+        "signed": false
+      }
+    ],
+    "rd_si20": [
+      {
+        "name": "rd",
+        "kind": "gr",
+        "access": "write"
+      },
+      {
+        "name": "si20",
+        "kind": "immediate",
+        "access": "read",
+        "bits": 20,
+        "signed": true
+      }
+    ],
+    "branch_gr2_offs16": [
+      {
+        "name": "rj",
+        "kind": "gr",
+        "access": "read"
+      },
+      {
+        "name": "rd",
+        "kind": "gr",
+        "access": "read"
+      },
+      {
+        "name": "offs16",
+        "kind": "immediate",
+        "access": "read",
+        "bits": 16,
+        "signed": true,
+        "encoded_scale": 4
+      }
+    ],
+    "offs26": [
+      {
+        "name": "offs26",
+        "kind": "immediate",
+        "access": "read",
+        "bits": 26,
+        "signed": true,
+        "encoded_scale": 4
+      }
+    ],
+    "jirl": [
+      {
+        "name": "rd",
+        "kind": "gr",
+        "access": "write"
+      },
+      {
+        "name": "rj",
+        "kind": "gr",
+        "access": "read"
+      },
+      {
+        "name": "offs16",
+        "kind": "immediate",
+        "access": "read",
+        "bits": 16,
+        "signed": true,
+        "encoded_scale": 4
+      }
+    ],
+    "preld": [
+      {
+        "name": "hint",
+        "kind": "immediate",
+        "access": "read",
+        "bits": 5,
+        "signed": false
+      },
+      {
+        "name": "rj",
+        "kind": "gr",
+        "access": "read"
+      },
+      {
+        "name": "si12",
+        "kind": "immediate",
+        "access": "read",
+        "bits": 12,
+        "signed": true
+      }
+    ],
+    "ll": [
+      {
+        "name": "rd",
+        "kind": "gr",
+        "access": "write"
+      },
+      {
+        "name": "rj",
+        "kind": "gr",
+        "access": "read"
+      },
+      {
+        "name": "si14",
+        "kind": "immediate",
+        "access": "read",
+        "bits": 14,
+        "signed": true,
+        "encoded_scale": 4
+      }
+    ],
+    "sc": [
+      {
+        "name": "rd",
+        "kind": "gr",
+        "access": "read_write"
+      },
+      {
+        "name": "rj",
+        "kind": "gr",
+        "access": "read"
+      },
+      {
+        "name": "si14",
+        "kind": "immediate",
+        "access": "read",
+        "bits": 14,
+        "signed": true,
+        "encoded_scale": 4
+      }
+    ],
+    "hint15": [
+      {
+        "name": "hint",
+        "kind": "immediate",
+        "access": "read",
+        "bits": 15,
+        "signed": false
+      }
+    ],
+    "code15": [
+      {
+        "name": "code",
+        "kind": "immediate",
+        "access": "read",
+        "bits": 15,
+        "signed": false
+      }
+    ],
+    "rd_only": [
+      {
+        "name": "rd",
+        "kind": "gr",
+        "access": "write"
+      }
+    ],
+    "rj_write_only": [
+      {
+        "name": "rj",
+        "kind": "gr",
+        "access": "write"
+      }
+    ],
+    "csr_read": [
+      {
+        "name": "rd",
+        "kind": "gr",
+        "access": "write"
+      },
+      {
+        "name": "csr_num",
+        "kind": "csr_address",
+        "access": "read",
+        "bits": 14
+      }
+    ],
+    "csr_write_swap": [
+      {
+        "name": "rd",
+        "kind": "gr",
+        "access": "read_write"
+      },
+      {
+        "name": "csr_num",
+        "kind": "csr_address",
+        "access": "read",
+        "bits": 14
+      }
+    ],
+    "csr_exchange": [
+      {
+        "name": "rd",
+        "kind": "gr",
+        "access": "read_write"
+      },
+      {
+        "name": "rj",
+        "kind": "gr",
+        "access": "read"
+      },
+      {
+        "name": "csr_num",
+        "kind": "csr_address",
+        "access": "read",
+        "bits": 14
+      }
+    ],
+    "cacop": [
+      {
+        "name": "code",
+        "kind": "immediate",
+        "access": "read",
+        "bits": 5,
+        "signed": false
+      },
+      {
+        "name": "rj",
+        "kind": "gr",
+        "access": "read"
+      },
+      {
+        "name": "si12",
+        "kind": "immediate",
+        "access": "read",
+        "bits": 12,
+        "signed": true
+      }
+    ],
+    "none": [],
+    "invtlb": [
+      {
+        "name": "op",
+        "kind": "immediate",
+        "access": "read",
+        "bits": 5,
+        "signed": false
+      },
+      {
+        "name": "rj",
+        "kind": "gr",
+        "access": "read"
+      },
+      {
+        "name": "rk",
+        "kind": "gr",
+        "access": "read"
+      }
+    ],
+    "idle": [
+      {
+        "name": "level",
+        "kind": "immediate",
+        "access": "read",
+        "bits": 15,
+        "signed": false
+      }
+    ]
+  },
+  "instruction_sets": [
+    {
+      "id": "base_integer",
+      "manual_chapter": 2,
+      "privileged": false,
+      "instructions": [
+        {
+          "mnemonic": "ADD.W",
+          "assembly": "add.w rd, rj, rk",
+          "section": "2.2.1.1",
+          "category": "arithmetic",
+          "operand_form": "gr3",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = LOW32(GR[rj] + GR[rk])",
+          "reads": ["GR[rj]", "GR[rk]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none",
+          "rtl_checks": ["Do not trap on signed overflow or carry-out."]
+        },
+        {
+          "mnemonic": "SUB.W",
+          "assembly": "sub.w rd, rj, rk",
+          "section": "2.2.1.1",
+          "category": "arithmetic",
+          "operand_form": "gr3",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = LOW32(GR[rj] - GR[rk])",
+          "reads": ["GR[rj]", "GR[rk]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none",
+          "rtl_checks": ["Do not trap on signed overflow or borrow."]
+        },
+        {
+          "mnemonic": "ADDI.W",
+          "assembly": "addi.w rd, rj, si12",
+          "section": "2.2.1.2",
+          "category": "arithmetic",
+          "operand_form": "gr2_si12",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = LOW32(GR[rj] + SEXT(si12,32))",
+          "reads": ["GR[rj]", "si12"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none"
+        },
+        {
+          "mnemonic": "LU12I.W",
+          "assembly": "lu12i.w rd, si20",
+          "section": "2.2.1.3",
+          "category": "immediate_build",
+          "operand_form": "rd_si20",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = concat(si20, 12'b0)",
+          "reads": ["si20"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none",
+          "rtl_checks": ["In LA32R the concatenation already produces exactly 32 bits."]
+        },
+        {
+          "mnemonic": "SLT",
+          "assembly": "slt rd, rj, rk",
+          "section": "2.2.1.4",
+          "category": "compare",
+          "operand_form": "gr3",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = (signed32(GR[rj]) < signed32(GR[rk])) ? 1 : 0",
+          "reads": ["GR[rj]", "GR[rk]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none"
+        },
+        {
+          "mnemonic": "SLTU",
+          "assembly": "sltu rd, rj, rk",
+          "section": "2.2.1.4",
+          "category": "compare",
+          "operand_form": "gr3",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = (unsigned32(GR[rj]) < unsigned32(GR[rk])) ? 1 : 0",
+          "reads": ["GR[rj]", "GR[rk]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none"
+        },
+        {
+          "mnemonic": "SLTI",
+          "assembly": "slti rd, rj, si12",
+          "section": "2.2.1.5",
+          "category": "compare",
+          "operand_form": "gr2_si12",
+          "privilege_profile": "non_privileged",
+          "operation": "tmp = SEXT(si12,32); GR[rd] = (signed32(GR[rj]) < signed32(tmp)) ? 1 : 0",
+          "reads": ["GR[rj]", "si12"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none"
+        },
+        {
+          "mnemonic": "SLTUI",
+          "assembly": "sltui rd, rj, si12",
+          "section": "2.2.1.5",
+          "category": "compare",
+          "operand_form": "gr2_si12",
+          "privilege_profile": "non_privileged",
+          "operation": "tmp = SEXT(si12,32); GR[rd] = (unsigned32(GR[rj]) < unsigned32(tmp)) ? 1 : 0",
+          "reads": ["GR[rj]", "si12"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none",
+          "rtl_checks": ["The immediate is sign-extended even though the comparison is unsigned."]
+        },
+        {
+          "mnemonic": "PCADDU12I",
+          "assembly": "pcaddu12i rd, si20",
+          "section": "2.2.1.6",
+          "category": "pc_relative",
+          "operand_form": "rd_si20",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = LOW32(PC_old + concat(si20, 12'b0))",
+          "reads": ["PC_old", "si20"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none"
+        },
+        {
+          "mnemonic": "AND",
+          "assembly": "and rd, rj, rk",
+          "section": "2.2.1.7",
+          "category": "logic",
+          "operand_form": "gr3",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = GR[rj] & GR[rk]",
+          "reads": ["GR[rj]", "GR[rk]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none"
+        },
+        {
+          "mnemonic": "OR",
+          "assembly": "or rd, rj, rk",
+          "section": "2.2.1.7",
+          "category": "logic",
+          "operand_form": "gr3",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = GR[rj] | GR[rk]",
+          "reads": ["GR[rj]", "GR[rk]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none"
+        },
+        {
+          "mnemonic": "NOR",
+          "assembly": "nor rd, rj, rk",
+          "section": "2.2.1.7",
+          "category": "logic",
+          "operand_form": "gr3",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = LOW32(~(GR[rj] | GR[rk]))",
+          "reads": ["GR[rj]", "GR[rk]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none"
+        },
+        {
+          "mnemonic": "XOR",
+          "assembly": "xor rd, rj, rk",
+          "section": "2.2.1.7",
+          "category": "logic",
+          "operand_form": "gr3",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = GR[rj] ^ GR[rk]",
+          "reads": ["GR[rj]", "GR[rk]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none"
+        },
+        {
+          "mnemonic": "ANDI",
+          "assembly": "andi rd, rj, ui12",
+          "section": "2.2.1.8",
+          "category": "logic",
+          "operand_form": "gr2_ui12",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = GR[rj] & ZEXT(ui12,32)",
+          "reads": ["GR[rj]", "ui12"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none"
+        },
+        {
+          "mnemonic": "ORI",
+          "assembly": "ori rd, rj, ui12",
+          "section": "2.2.1.8",
+          "category": "logic",
+          "operand_form": "gr2_ui12",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = GR[rj] | ZEXT(ui12,32)",
+          "reads": ["GR[rj]", "ui12"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none"
+        },
+        {
+          "mnemonic": "XORI",
+          "assembly": "xori rd, rj, ui12",
+          "section": "2.2.1.8",
+          "category": "logic",
+          "operand_form": "gr2_ui12",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = GR[rj] ^ ZEXT(ui12,32)",
+          "reads": ["GR[rj]", "ui12"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none"
+        },
+        {
+          "mnemonic": "NOP",
+          "assembly": "nop",
+          "section": "2.2.1.9",
+          "category": "alias",
+          "operand_form": "none",
+          "privilege_profile": "non_privileged",
+          "alias_of": "ANDI r0,r0,0",
+          "operation": "No architectural state change other than normal PC advance.",
+          "reads": [],
+          "writes": [],
+          "exception_profile": "none"
+        },
+        {
+          "mnemonic": "MUL.W",
+          "assembly": "mul.w rd, rj, rk",
+          "section": "2.2.1.10",
+          "category": "multiply",
+          "operand_form": "gr3",
+          "privilege_profile": "non_privileged",
+          "operation": "product = signed32(GR[rj]) * signed32(GR[rk]); GR[rd] = product[31:0]",
+          "reads": ["GR[rj]", "GR[rk]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none",
+          "rtl_checks": ["The low 32 bits are identical for signed and unsigned multiplication."]
+        },
+        {
+          "mnemonic": "MULH.W",
+          "assembly": "mulh.w rd, rj, rk",
+          "section": "2.2.1.10",
+          "category": "multiply",
+          "operand_form": "gr3",
+          "privilege_profile": "non_privileged",
+          "operation": "product = signed32(GR[rj]) * signed32(GR[rk]); GR[rd] = product[63:32]",
+          "reads": ["GR[rj]", "GR[rk]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none"
+        },
+        {
+          "mnemonic": "MULH.WU",
+          "assembly": "mulh.wu rd, rj, rk",
+          "section": "2.2.1.10",
+          "category": "multiply",
+          "operand_form": "gr3",
+          "privilege_profile": "non_privileged",
+          "operation": "product = unsigned32(GR[rj]) * unsigned32(GR[rk]); GR[rd] = product[63:32]",
+          "reads": ["GR[rj]", "GR[rk]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none"
+        },
+        {
+          "mnemonic": "DIV.W",
+          "assembly": "div.w rd, rj, rk",
+          "section": "2.2.1.11",
+          "category": "divide",
+          "operand_form": "gr3",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = LOW32(signed_quotient_toward_zero(GR[rj], GR[rk]))",
+          "reads": ["GR[rj]", "GR[rk]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none",
+          "undefined_behavior": ["When divisor GR[rk] is zero, the result may be any value; no exception is raised."]
+        },
+        {
+          "mnemonic": "DIV.WU",
+          "assembly": "div.wu rd, rj, rk",
+          "section": "2.2.1.11",
+          "category": "divide",
+          "operand_form": "gr3",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = unsigned32(GR[rj]) / unsigned32(GR[rk])",
+          "reads": ["GR[rj]", "GR[rk]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none",
+          "undefined_behavior": ["When divisor GR[rk] is zero, the result may be any value; no exception is raised."]
+        },
+        {
+          "mnemonic": "MOD.W",
+          "assembly": "mod.w rd, rj, rk",
+          "section": "2.2.1.11",
+          "category": "divide",
+          "operand_form": "gr3",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = signed_remainder_toward_zero(GR[rj], GR[rk])",
+          "reads": ["GR[rj]", "GR[rk]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none",
+          "notes": ["For nonzero divisor, the remainder has the dividend sign and smaller absolute value than the divisor."],
+          "undefined_behavior": ["When divisor GR[rk] is zero, the result may be any value; no exception is raised."]
+        },
+        {
+          "mnemonic": "MOD.WU",
+          "assembly": "mod.wu rd, rj, rk",
+          "section": "2.2.1.11",
+          "category": "divide",
+          "operand_form": "gr3",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = unsigned32(GR[rj]) % unsigned32(GR[rk])",
+          "reads": ["GR[rj]", "GR[rk]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none",
+          "undefined_behavior": ["When divisor GR[rk] is zero, the result may be any value; no exception is raised."]
+        },
+        {
+          "mnemonic": "SLL.W",
+          "assembly": "sll.w rd, rj, rk",
+          "section": "2.2.2.1",
+          "category": "shift",
+          "operand_form": "gr3",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = LOW32(GR[rj] << GR[rk][4:0])",
+          "reads": ["GR[rj]", "GR[rk][4:0]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none"
+        },
+        {
+          "mnemonic": "SRL.W",
+          "assembly": "srl.w rd, rj, rk",
+          "section": "2.2.2.1",
+          "category": "shift",
+          "operand_form": "gr3",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = logical_right_shift_32(GR[rj], GR[rk][4:0])",
+          "reads": ["GR[rj]", "GR[rk][4:0]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none"
+        },
+        {
+          "mnemonic": "SRA.W",
+          "assembly": "sra.w rd, rj, rk",
+          "section": "2.2.2.1",
+          "category": "shift",
+          "operand_form": "gr3",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = arithmetic_right_shift_32(GR[rj], GR[rk][4:0])",
+          "reads": ["GR[rj]", "GR[rk][4:0]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none"
+        },
+        {
+          "mnemonic": "SLLI.W",
+          "assembly": "slli.w rd, rj, ui5",
+          "section": "2.2.2.2",
+          "category": "shift",
+          "operand_form": "gr2_ui5",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = LOW32(GR[rj] << ui5)",
+          "reads": ["GR[rj]", "ui5"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none"
+        },
+        {
+          "mnemonic": "SRLI.W",
+          "assembly": "srli.w rd, rj, ui5",
+          "section": "2.2.2.2",
+          "category": "shift",
+          "operand_form": "gr2_ui5",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = logical_right_shift_32(GR[rj], ui5)",
+          "reads": ["GR[rj]", "ui5"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none"
+        },
+        {
+          "mnemonic": "SRAI.W",
+          "assembly": "srai.w rd, rj, ui5",
+          "section": "2.2.2.2",
+          "category": "shift",
+          "operand_form": "gr2_ui5",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = arithmetic_right_shift_32(GR[rj], ui5)",
+          "reads": ["GR[rj]", "ui5"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none"
+        },
+        {
+          "mnemonic": "BEQ",
+          "assembly": "beq rj, rd, offs16",
+          "section": "2.2.3.1",
+          "category": "conditional_branch",
+          "operand_form": "branch_gr2_offs16",
+          "privilege_profile": "non_privileged",
+          "operation": "if GR[rj] == GR[rd]: PC = PC_old + SEXT(offs16 << 2,32)",
+          "reads": ["GR[rj]", "GR[rd]", "PC_old", "offs16"],
+          "writes": ["PC when condition is true"],
+          "exception_profile": "none",
+          "control_flow": {"type": "conditional_direct", "target": "PC_old + SEXT(offs16 << 2,32)"}
+        },
+        {
+          "mnemonic": "BNE",
+          "assembly": "bne rj, rd, offs16",
+          "section": "2.2.3.1",
+          "category": "conditional_branch",
+          "operand_form": "branch_gr2_offs16",
+          "privilege_profile": "non_privileged",
+          "operation": "if GR[rj] != GR[rd]: PC = PC_old + SEXT(offs16 << 2,32)",
+          "reads": ["GR[rj]", "GR[rd]", "PC_old", "offs16"],
+          "writes": ["PC when condition is true"],
+          "exception_profile": "none",
+          "control_flow": {"type": "conditional_direct", "target": "PC_old + SEXT(offs16 << 2,32)"}
+        },
+        {
+          "mnemonic": "BLT",
+          "assembly": "blt rj, rd, offs16",
+          "section": "2.2.3.1",
+          "category": "conditional_branch",
+          "operand_form": "branch_gr2_offs16",
+          "privilege_profile": "non_privileged",
+          "operation": "if signed32(GR[rj]) < signed32(GR[rd]): PC = PC_old + SEXT(offs16 << 2,32)",
+          "reads": ["GR[rj]", "GR[rd]", "PC_old", "offs16"],
+          "writes": ["PC when condition is true"],
+          "exception_profile": "none",
+          "control_flow": {"type": "conditional_direct", "comparison": "signed_lt"}
+        },
+        {
+          "mnemonic": "BGE",
+          "assembly": "bge rj, rd, offs16",
+          "section": "2.2.3.1",
+          "category": "conditional_branch",
+          "operand_form": "branch_gr2_offs16",
+          "privilege_profile": "non_privileged",
+          "operation": "if signed32(GR[rj]) >= signed32(GR[rd]): PC = PC_old + SEXT(offs16 << 2,32)",
+          "reads": ["GR[rj]", "GR[rd]", "PC_old", "offs16"],
+          "writes": ["PC when condition is true"],
+          "exception_profile": "none",
+          "control_flow": {"type": "conditional_direct", "comparison": "signed_ge"}
+        },
+        {
+          "mnemonic": "BLTU",
+          "assembly": "bltu rj, rd, offs16",
+          "section": "2.2.3.1",
+          "category": "conditional_branch",
+          "operand_form": "branch_gr2_offs16",
+          "privilege_profile": "non_privileged",
+          "operation": "if unsigned32(GR[rj]) < unsigned32(GR[rd]): PC = PC_old + SEXT(offs16 << 2,32)",
+          "reads": ["GR[rj]", "GR[rd]", "PC_old", "offs16"],
+          "writes": ["PC when condition is true"],
+          "exception_profile": "none",
+          "control_flow": {"type": "conditional_direct", "comparison": "unsigned_lt"}
+        },
+        {
+          "mnemonic": "BGEU",
+          "assembly": "bgeu rj, rd, offs16",
+          "section": "2.2.3.1",
+          "category": "conditional_branch",
+          "operand_form": "branch_gr2_offs16",
+          "privilege_profile": "non_privileged",
+          "operation": "if unsigned32(GR[rj]) >= unsigned32(GR[rd]): PC = PC_old + SEXT(offs16 << 2,32)",
+          "reads": ["GR[rj]", "GR[rd]", "PC_old", "offs16"],
+          "writes": ["PC when condition is true"],
+          "exception_profile": "none",
+          "control_flow": {"type": "conditional_direct", "comparison": "unsigned_ge"}
+        },
+        {
+          "mnemonic": "B",
+          "assembly": "b offs26",
+          "section": "2.2.3.2",
+          "category": "unconditional_branch",
+          "operand_form": "offs26",
+          "privilege_profile": "non_privileged",
+          "operation": "PC = PC_old + SEXT(offs26 << 2,32)",
+          "reads": ["PC_old", "offs26"],
+          "writes": ["PC"],
+          "exception_profile": "none",
+          "control_flow": {"type": "unconditional_direct", "target": "PC_old + SEXT(offs26 << 2,32)"}
+        },
+        {
+          "mnemonic": "BL",
+          "assembly": "bl offs26",
+          "section": "2.2.3.3",
+          "category": "call",
+          "operand_form": "offs26",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[1] = PC_old + 4; PC = PC_old + SEXT(offs26 << 2,32)",
+          "reads": ["PC_old", "offs26"],
+          "writes": ["GR[1]", "PC"],
+          "exception_profile": "none",
+          "control_flow": {"type": "direct_call", "link_register": "r1"}
+        },
+        {
+          "mnemonic": "JIRL",
+          "assembly": "jirl rd, rj, offs16",
+          "section": "2.2.3.4",
+          "category": "indirect_jump",
+          "operand_form": "jirl",
+          "privilege_profile": "non_privileged",
+          "operation": "base = GR[rj]; GR[rd] = PC_old + 4; PC = base + SEXT(offs16 << 2,32)",
+          "reads": ["GR[rj]", "PC_old", "offs16"],
+          "writes": ["GR[rd]", "PC"],
+          "exception_profile": "none",
+          "control_flow": {"type": "indirect", "target": "old(GR[rj]) + SEXT(offs16 << 2,32)"},
+          "rtl_checks": ["Read GR[rj] before writeback when rd equals rj.", "A misaligned target is observed as a later instruction-fetch ADEF."]
+        },
+        {
+          "mnemonic": "LD.B",
+          "assembly": "ld.b rd, rj, si12",
+          "section": "2.2.4.1",
+          "category": "load",
+          "operand_form": "gr2_si12",
+          "privilege_profile": "non_privileged",
+          "operation": "vaddr = GR[rj] + SEXT(si12,32); GR[rd] = SEXT(MEM8[vaddr],32)",
+          "reads": ["GR[rj]", "si12", "MEM8[vaddr]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "load_byte",
+          "memory": {"kind": "load", "width_bits": 8, "alignment_bytes": 1, "result_extension": "sign", "profile": "integer_load"}
+        },
+        {
+          "mnemonic": "LD.BU",
+          "assembly": "ld.bu rd, rj, si12",
+          "section": "2.2.4.1",
+          "category": "load",
+          "operand_form": "gr2_si12",
+          "privilege_profile": "non_privileged",
+          "operation": "vaddr = GR[rj] + SEXT(si12,32); GR[rd] = ZEXT(MEM8[vaddr],32)",
+          "reads": ["GR[rj]", "si12", "MEM8[vaddr]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "load_byte",
+          "memory": {"kind": "load", "width_bits": 8, "alignment_bytes": 1, "result_extension": "zero", "profile": "integer_load"}
+        },
+        {
+          "mnemonic": "LD.H",
+          "assembly": "ld.h rd, rj, si12",
+          "section": "2.2.4.1",
+          "category": "load",
+          "operand_form": "gr2_si12",
+          "privilege_profile": "non_privileged",
+          "operation": "vaddr = GR[rj] + SEXT(si12,32); require vaddr[0]==0; GR[rd] = SEXT(MEM16[vaddr],32)",
+          "reads": ["GR[rj]", "si12", "MEM16[vaddr]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "load_aligned",
+          "memory": {"kind": "load", "width_bits": 16, "alignment_bytes": 2, "result_extension": "sign", "profile": "integer_load"}
+        },
+        {
+          "mnemonic": "LD.HU",
+          "assembly": "ld.hu rd, rj, si12",
+          "section": "2.2.4.1",
+          "category": "load",
+          "operand_form": "gr2_si12",
+          "privilege_profile": "non_privileged",
+          "operation": "vaddr = GR[rj] + SEXT(si12,32); require vaddr[0]==0; GR[rd] = ZEXT(MEM16[vaddr],32)",
+          "reads": ["GR[rj]", "si12", "MEM16[vaddr]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "load_aligned",
+          "memory": {"kind": "load", "width_bits": 16, "alignment_bytes": 2, "result_extension": "zero", "profile": "integer_load"}
+        },
+        {
+          "mnemonic": "LD.W",
+          "assembly": "ld.w rd, rj, si12",
+          "section": "2.2.4.1",
+          "category": "load",
+          "operand_form": "gr2_si12",
+          "privilege_profile": "non_privileged",
+          "operation": "vaddr = GR[rj] + SEXT(si12,32); require vaddr[1:0]==0; GR[rd] = MEM32[vaddr]",
+          "reads": ["GR[rj]", "si12", "MEM32[vaddr]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "load_aligned",
+          "memory": {"kind": "load", "width_bits": 32, "alignment_bytes": 4, "result_extension": "none", "profile": "integer_load"}
+        },
+        {
+          "mnemonic": "ST.B",
+          "assembly": "st.b rd, rj, si12",
+          "section": "2.2.4.1",
+          "category": "store",
+          "operand_form": "store_gr2_si12",
+          "privilege_profile": "non_privileged",
+          "operation": "vaddr = GR[rj] + SEXT(si12,32); MEM8[vaddr] = GR[rd][7:0]",
+          "reads": ["GR[rj]", "GR[rd][7:0]", "si12"],
+          "writes": ["MEM8[vaddr]"],
+          "exception_profile": "store_byte",
+          "memory": {"kind": "store", "width_bits": 8, "alignment_bytes": 1, "profile": "integer_store"}
+        },
+        {
+          "mnemonic": "ST.H",
+          "assembly": "st.h rd, rj, si12",
+          "section": "2.2.4.1",
+          "category": "store",
+          "operand_form": "store_gr2_si12",
+          "privilege_profile": "non_privileged",
+          "operation": "vaddr = GR[rj] + SEXT(si12,32); require vaddr[0]==0; MEM16[vaddr] = GR[rd][15:0]",
+          "reads": ["GR[rj]", "GR[rd][15:0]", "si12"],
+          "writes": ["MEM16[vaddr]"],
+          "exception_profile": "store_aligned",
+          "memory": {"kind": "store", "width_bits": 16, "alignment_bytes": 2, "profile": "integer_store"}
+        },
+        {
+          "mnemonic": "ST.W",
+          "assembly": "st.w rd, rj, si12",
+          "section": "2.2.4.1",
+          "category": "store",
+          "operand_form": "store_gr2_si12",
+          "privilege_profile": "non_privileged",
+          "operation": "vaddr = GR[rj] + SEXT(si12,32); require vaddr[1:0]==0; MEM32[vaddr] = GR[rd]",
+          "reads": ["GR[rj]", "GR[rd]", "si12"],
+          "writes": ["MEM32[vaddr]"],
+          "exception_profile": "store_aligned",
+          "memory": {"kind": "store", "width_bits": 32, "alignment_bytes": 4, "profile": "integer_store"}
+        },
+        {
+          "mnemonic": "PRELD",
+          "assembly": "preld hint, rj, si12",
+          "section": "2.2.4.2",
+          "category": "prefetch",
+          "operand_form": "preld",
+          "privilege_profile": "non_privileged",
+          "operation": "vaddr = GR[rj] + SEXT(si12,32); hint 0 requests load-prefetch to L1 DCache; hint 8 requests store-prefetch to L1 DCache",
+          "reads": ["GR[rj]", "si12", "hint"],
+          "writes": ["implementation cache state when request is honored"],
+          "exception_profile": "prefetch",
+          "memory": {"kind": "prefetch", "address": "GR[rj] + SEXT(si12,32)", "alignment_bytes": 1},
+          "rtl_checks": ["Undefined hints act as NOP.", "Non-cached target acts as NOP.", "Never raise MMU or address-related exceptions."]
+        },
+        {
+          "mnemonic": "LL.W",
+          "assembly": "ll.w rd, rj, si14",
+          "section": "2.2.5.1",
+          "category": "atomic_load",
+          "operand_form": "ll",
+          "privilege_profile": "non_privileged",
+          "operation": "vaddr = GR[rj] + SEXT(si14 << 2,32); GR[rd] = MEM32[vaddr]; reservation_address = vaddr; LLbit = 1",
+          "reads": ["GR[rj]", "si14", "MEM32[vaddr]"],
+          "writes": ["GR[rd]", "reservation_address", "LLbit"],
+          "exception_profile": "atomic_load_word",
+          "memory": {"kind": "load_linked", "width_bits": 32, "profile": "llsc"}
+        },
+        {
+          "mnemonic": "SC.W",
+          "assembly": "sc.w rd, rj, si14",
+          "section": "2.2.5.1",
+          "category": "atomic_store",
+          "operand_form": "sc",
+          "privilege_profile": "non_privileged",
+          "operation": "data = old(GR[rd]); vaddr = GR[rj] + SEXT(si14 << 2,32); if LLbit==1 and reservation remains valid then MEM32[vaddr]=data and success=1 else no store and success=0; GR[rd]=success",
+          "reads": ["old(GR[rd])", "GR[rj]", "si14", "LLbit", "reservation state"],
+          "writes": ["MEM32[vaddr] on success", "GR[rd]"],
+          "exception_profile": "atomic_store_word",
+          "memory": {"kind": "store_conditional", "width_bits": 32, "profile": "llsc"},
+          "rtl_checks": ["Capture old GR[rd] before writing the success flag.", "A coherent store to the reserved cache line by another agent clears LLbit."]
+        },
+        {
+          "mnemonic": "DBAR",
+          "assembly": "dbar hint",
+          "section": "2.2.6.1",
+          "category": "memory_barrier",
+          "operand_form": "hint15",
+          "privilege_profile": "non_privileged",
+          "operation": "Apply the memory-ordering constraint selected by hint; hint 0 is a full load/store barrier",
+          "reads": ["hint", "memory-order state"],
+          "writes": ["memory-order state"],
+          "exception_profile": "none",
+          "side_effects": ["For hint 0, all earlier loads/stores complete before the barrier completes; later loads/stores start only after it completes."],
+          "rtl_checks": ["Any hint without a dedicated implementation must behave as hint 0."]
+        },
+        {
+          "mnemonic": "IBAR",
+          "assembly": "ibar hint",
+          "section": "2.2.6.2",
+          "category": "instruction_barrier",
+          "operand_form": "hint15",
+          "privilege_profile": "non_privileged",
+          "operation": "Synchronize prior stores with subsequent instruction fetch; hint 0 is the mandatory form",
+          "reads": ["hint", "store completion state"],
+          "writes": ["instruction-fetch synchronization state"],
+          "exception_profile": "none",
+          "rtl_checks": ["After IBAR 0, subsequent fetch must observe all stores before the barrier."]
+        },
+        {
+          "mnemonic": "SYSCALL",
+          "assembly": "syscall code",
+          "section": "2.2.7.1",
+          "category": "synchronous_exception",
+          "operand_form": "code15",
+          "privilege_profile": "non_privileged",
+          "operation": "Raise SYS synchronously; code is available to the exception handler",
+          "reads": ["code", "PC_old"],
+          "writes": ["exception state"],
+          "exception_profile": "syscall"
+        },
+        {
+          "mnemonic": "BREAK",
+          "assembly": "break code",
+          "section": "2.2.7.2",
+          "category": "synchronous_exception",
+          "operand_form": "code15",
+          "privilege_profile": "non_privileged",
+          "operation": "Raise BRK synchronously; code is available to the exception handler",
+          "reads": ["code", "PC_old"],
+          "writes": ["exception state"],
+          "exception_profile": "break"
+        },
+        {
+          "mnemonic": "RDCNTVL.W",
+          "assembly": "rdcntvl.w rd",
+          "section": "2.2.7.3",
+          "category": "counter_read",
+          "operand_form": "rd_only",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = StableCounter[31:0]",
+          "reads": ["StableCounter[31:0]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none"
+        },
+        {
+          "mnemonic": "RDCNTVH.W",
+          "assembly": "rdcntvh.w rd",
+          "section": "2.2.7.3",
+          "category": "counter_read",
+          "operand_form": "rd_only",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rd] = StableCounter[63:32]",
+          "reads": ["StableCounter[63:32]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "none",
+          "notes": ["Separate high/low reads are not guaranteed to be one atomic 64-bit snapshot."]
+        },
+        {
+          "mnemonic": "RDCNTID",
+          "assembly": "rdcntid rj",
+          "section": "2.2.7.3",
+          "category": "counter_read",
+          "operand_form": "rj_write_only",
+          "privilege_profile": "non_privileged",
+          "operation": "GR[rj] = CounterID = CSR.TID",
+          "reads": ["CSR.TID"],
+          "writes": ["GR[rj]"],
+          "exception_profile": "none",
+          "notes": ["Appendix B labels the encoding RDCNTID.W, while the semantic section uses RDCNTID."]
+        }
+      ]
+    },
+    {
+      "id": "base_privileged",
+      "manual_chapter": 4,
+      "privileged": true,
+      "instructions": [
+        {
+          "mnemonic": "CSRRD",
+          "assembly": "csrrd rd, csr_num",
+          "section": "4.2.1.1",
+          "category": "csr_access",
+          "operand_form": "csr_read",
+          "privilege_profile": "plv0_only",
+          "operation": "GR[rd] = CSR[csr_num]",
+          "reads": ["CSR[csr_num]"],
+          "writes": ["GR[rd]"],
+          "exception_profile": "plv0_instruction",
+          "notes": ["An undefined or unimplemented CSR reads as zero."]
+        },
+        {
+          "mnemonic": "CSRWR",
+          "assembly": "csrwr rd, csr_num",
+          "section": "4.2.1.1",
+          "category": "csr_access",
+          "operand_form": "csr_write_swap",
+          "privilege_profile": "plv0_only",
+          "operation": "old_csr = CSR[csr_num]; write software-writable CSR fields from old(GR[rd]); GR[rd] = old_csr",
+          "reads": ["old(GR[rd])", "old(CSR[csr_num])"],
+          "writes": ["software-writable fields of CSR[csr_num]", "GR[rd]"],
+          "exception_profile": "plv0_instruction",
+          "rtl_checks": ["Capture both old values before either architectural write.", "Writes to read-only and reserved fields follow the CSR field access rules."],
+          "notes": ["For an undefined or unimplemented CSR, no CSR state changes and GR[rd] receives zero."]
+        },
+        {
+          "mnemonic": "CSRXCHG",
+          "assembly": "csrxchg rd, rj, csr_num",
+          "section": "4.2.1.1",
+          "category": "csr_access",
+          "operand_form": "csr_exchange",
+          "privilege_profile": "plv0_only",
+          "operation": "old_csr = CSR[csr_num]; new_csr = (old_csr & ~GR[rj]) | (old(GR[rd]) & GR[rj]) for software-writable bits; GR[rd] = old_csr",
+          "reads": ["old(GR[rd])", "GR[rj]", "old(CSR[csr_num])"],
+          "writes": ["masked software-writable fields of CSR[csr_num]", "GR[rd]"],
+          "exception_profile": "plv0_instruction",
+          "rtl_checks": ["GR[rj] is the per-bit write mask.", "CSR hazards are interlocked by hardware; software barriers are not required."],
+          "notes": ["For an undefined or unimplemented CSR, no CSR state changes and GR[rd] receives zero."]
+        },
+        {
+          "mnemonic": "CACOP",
+          "assembly": "cacop code, rj, si12",
+          "section": "4.2.2.1",
+          "category": "cache_maintenance",
+          "operand_form": "cacop",
+          "privilege_profile": "cacop_conditional",
+          "operation": "VA = GR[rj] + SEXT(si12,32); code[2:0] selects cache; code[4:3] selects StoreTag, Index maintenance, Hit maintenance, or implementation-defined operation",
+          "reads": ["GR[rj]", "si12", "code", "selected cache state"],
+          "writes": ["selected cache state"],
+          "exception_profile": "cacop",
+          "side_effects": [
+            "code[2:0]=0 selects L1 instruction cache.",
+            "code[2:0]=1 selects L1 data cache.",
+            "code[2:0]=2 selects L2 shared unified cache.",
+            "code[4:3]=0 performs direct-index StoreTag initialization and writes tag zero.",
+            "code[4:3]=1 performs direct-index invalidate or invalidate-and-writeback.",
+            "code[4:3]=2 performs hit-based invalidate or invalidate-and-writeback after address translation.",
+            "code[4:3]=3 is implementation-defined."
+          ],
+          "rtl_checks": ["Instruction-cache invalidation does not require data writeback.", "Hit operations do not require natural address alignment."]
+        },
+        {
+          "mnemonic": "TLBSRCH",
+          "assembly": "tlbsrch",
+          "section": "4.2.3.1",
+          "category": "tlb_maintenance",
+          "operand_form": "none",
+          "privilege_profile": "plv0_only",
+          "operation": "Search TLB using CSR.ASID.ASID and CSR.TLBEHI.VPPN; on hit set TLBIDX.Index=hit_index and TLBIDX.NE=0, otherwise set TLBIDX.NE=1",
+          "reads": ["CSR.ASID.ASID", "CSR.TLBEHI.VPPN", "TLB"],
+          "writes": ["CSR.TLBIDX.Index on hit", "CSR.TLBIDX.NE"],
+          "exception_profile": "plv0_instruction",
+          "rtl_checks": ["TLB indices are numbered from zero in increasing row order."]
+        },
+        {
+          "mnemonic": "TLBRD",
+          "assembly": "tlbrd",
+          "section": "4.2.3.2",
+          "category": "tlb_maintenance",
+          "operand_form": "none",
+          "privilege_profile": "plv0_only",
+          "operation": "Read TLB[CSR.TLBIDX.Index]; for an enabled entry copy ASID, VPPN, PS and both subpage fields to related CSRs and set NE=0; for a disabled entry set NE=1 and clear ASID, TLBEHI, TLBELO0, TLBELO1 and PS",
+          "reads": ["CSR.TLBIDX.Index", "selected TLB entry"],
+          "writes": ["CSR.ASID.ASID", "CSR.TLBEHI", "CSR.TLBELO0", "CSR.TLBELO1", "CSR.TLBIDX.PS", "CSR.TLBIDX.NE"],
+          "exception_profile": "plv0_instruction",
+          "undefined_behavior": ["If CSR.TLBIDX.Index is outside the implemented TLB range, behavior is undefined."],
+          "rtl_checks": ["TLB entry enable E and subpage valid bits V0/V1 are different concepts."]
+        },
+        {
+          "mnemonic": "TLBWR",
+          "assembly": "tlbwr",
+          "section": "4.2.3.3",
+          "category": "tlb_maintenance",
+          "operand_form": "none",
+          "privilege_profile": "plv0_only",
+          "operation": "Build a TLB entry from CSR.ASID, TLBEHI, TLBELO0, TLBELO1 and TLBIDX.PS, then write TLB[TLBIDX.Index]; E = 1 when ESTAT.Ecode==0x3f, otherwise E = !TLBIDX.NE",
+          "reads": ["CSR.ASID", "CSR.TLBEHI", "CSR.TLBELO0", "CSR.TLBELO1", "CSR.TLBIDX.PS", "CSR.TLBIDX.NE", "CSR.TLBIDX.Index", "CSR.ESTAT.Ecode"],
+          "writes": ["TLB[CSR.TLBIDX.Index]"],
+          "exception_profile": "plv0_instruction",
+          "rtl_checks": ["During TLB refill handling, force the entry enabled regardless of TLBIDX.NE.", "Entry G is one only when both TLBELO0.G and TLBELO1.G are one."]
+        },
+        {
+          "mnemonic": "TLBFILL",
+          "assembly": "tlbfill",
+          "section": "4.2.3.4",
+          "category": "tlb_maintenance",
+          "operand_form": "none",
+          "privilege_profile": "plv0_only",
+          "operation": "Build the same entry as TLBWR but write a hardware-randomly selected TLB slot; E = 1 when ESTAT.Ecode==0x3f, otherwise E = !TLBIDX.NE",
+          "reads": ["CSR.ASID", "CSR.TLBEHI", "CSR.TLBELO0", "CSR.TLBELO1", "CSR.TLBIDX.PS", "CSR.TLBIDX.NE", "CSR.ESTAT.Ecode"],
+          "writes": ["hardware-selected TLB entry"],
+          "exception_profile": "plv0_instruction",
+          "rtl_checks": ["The replacement index is selected by hardware, not CSR.TLBIDX.Index.", "During TLB refill handling, force the entry enabled."]
+        },
+        {
+          "mnemonic": "INVTLB",
+          "assembly": "invtlb op, rj, rk",
+          "section": "4.2.3.5",
+          "category": "tlb_maintenance",
+          "operand_form": "invtlb",
+          "privilege_profile": "plv0_only",
+          "operation": "Invalidate every TLB entry satisfying the predicate selected by op, using ASID=GR[rj][9:0] and VA=GR[rk] when required",
+          "reads": ["op", "GR[rj][9:0]", "GR[rk]", "TLB"],
+          "writes": ["matching TLB entry enable state"],
+          "exception_profile": "invtlb",
+          "side_effects": [
+            "op 0x0 or 0x1: invalidate all entries.",
+            "op 0x2: invalidate all G=1 entries.",
+            "op 0x3: invalidate all G=0 entries.",
+            "op 0x4: invalidate G=0 entries whose ASID equals GR[rj][9:0].",
+            "op 0x5: invalidate G=0 entries whose ASID and VA match.",
+            "op 0x6: invalidate entries whose VA matches and for which G=1 or ASID matches."
+          ],
+          "rtl_checks": ["For op 0x6 use (G || ASID_match) && VA_match.", "Use r0 for an unused ASID or VA operand."]
+        },
+        {
+          "mnemonic": "ERTN",
+          "assembly": "ertn",
+          "section": "4.2.4.1",
+          "category": "exception_return",
+          "operand_form": "none",
+          "privilege_profile": "plv0_only",
+          "operation": "CRMD.PLV=PRMD.PPLV; CRMD.IE=PRMD.PIE; if ESTAT.Ecode==0x3f then CRMD.DA=0 and CRMD.PG=1; PC=ERA; if LLBCTL.KLO!=1 then LLbit=0; clear LLBCTL.KLO after its one-shot effect",
+          "reads": ["CSR.PRMD.PPLV", "CSR.PRMD.PIE", "CSR.ESTAT.Ecode", "CSR.ERA", "CSR.LLBCTL.KLO"],
+          "writes": ["CSR.CRMD.PLV", "CSR.CRMD.IE", "CSR.CRMD.DA conditionally", "CSR.CRMD.PG conditionally", "PC", "LLbit conditionally", "CSR.LLBCTL.KLO"],
+          "exception_profile": "plv0_instruction",
+          "control_flow": {"type": "exception_return", "target": "CSR.ERA"},
+          "rtl_checks": ["TLB-refill return restores mapped mode with DA=0 and PG=1.", "KLO preserves LLbit for one ERTN only and then auto-clears."]
+        },
+        {
+          "mnemonic": "IDLE",
+          "assembly": "idle level",
+          "section": "4.2.4.2",
+          "category": "power_wait",
+          "operand_form": "idle",
+          "privilege_profile": "plv0_only",
+          "operation": "Complete the instruction, stop fetching, and wait for interrupt wakeup or reset; after interrupt wakeup the resume point is PC_old+4",
+          "reads": ["level", "interrupt wake signals", "reset"],
+          "writes": ["processor wait/fetch state", "PC on wakeup or reset path"],
+          "exception_profile": "plv0_instruction",
+          "control_flow": {"type": "wait", "resume_after_interrupt": "PC_old + 4"},
+          "notes": ["The architectural function of level is not further defined by this manual."]
+        }
+      ]
+    }
+  ]
+}
