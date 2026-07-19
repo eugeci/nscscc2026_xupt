@@ -1,0 +1,4 @@
+[submodule "core"]
+	path = core
+	url = https://github.com/yaia8106-sketch/JYD2026.git
+	branch = master
