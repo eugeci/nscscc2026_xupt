@@ -4,4 +4,4 @@
 	branch = master
 [submodule "chiplab"]
 	path = chiplab
-	url = git@gitee.com:loongson-edu/chiplab.git
+	url = git@gitee.com:eugeci/chiplab.git
