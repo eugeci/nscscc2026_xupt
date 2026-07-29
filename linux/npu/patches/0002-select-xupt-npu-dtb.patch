@@ -1,0 +1,16 @@
+diff --git a/arch/loongarch/loongson32/setup.c b/arch/loongarch/loongson32/setup.c
+index 9bbb725ae098..604d767b6a5c 100644
+--- a/arch/loongarch/loongson32/setup.c
++++ b/arch/loongarch/loongson32/setup.c
+@@ -43,7 +43,10 @@ const efi_system_table_t *efi_system_table;
+ 
+ extern void __init memblock_remove_mem(void);
+ extern char __dtb_start[];
+-#ifdef CONFIG_LS_SOC
++#if defined(CONFIG_LS_SOC) && defined(CONFIG_XUPT_NPU)
++extern u32 __dtb_loongson32_xupt_npu_begin[];
++static u32 *__dtb_begin = __dtb_loongson32_xupt_npu_begin;
++#elif defined(CONFIG_LS_SOC)
+ extern u32 __dtb_loongson32_ls_begin[];
+ static u32 *__dtb_begin = __dtb_loongson32_ls_begin;
+ #elif CONFIG_BX_SOC
