@@ -90,9 +90,9 @@ GET_INFO -> RESET -> LOAD_DESCRIPTORS -> write(19200-byte frame)
 2-to-1 仲裁器访问内存，Linux UAPI v2 提供单活动模型的 parameter、scratch 和
 result DMA 管理。默认值不变，因而处理器日常回归不会无意启用 NPU DMA。
 
-阶段 3 只固化分段模型 UAPI 和 FaceNet DMA 金标准验证；`.xnpu` 包、目标端
-运行时以及四模型循环切换仍属于阶段 4/5，不能把“驱动已经能换模型”误写成
-“完整多模型产品链已经完成”。
+阶段 3 只固化分段模型 UAPI 和 FaceNet DMA 金标准验证。阶段 4 已经增加
+`.xnpu` 包和目标端运行时；四模型 RTL 循环切换和故障恢复仍属于阶段 5，不能
+把“驱动和运行时已经能换模型”误写成“完整多模型产品链已经完成”。
 
 ## 3. 旧工程中已经验证的能力
 
@@ -345,9 +345,9 @@ result payload
 
 bbox、top1/top-k 和类别名称均在用户态计算。
 
-### 截止阶段 3 的实现记录
+### 截止阶段 4 的实现记录
 
-本轮在阶段 3 结束处停下，已经完成：
+当前已经完成：
 
 - [x] 阶段 1：迁移四个 target 的 config、Python 数值参考后端、参数、
   descriptor、microcode 和 fixture，并用 `models/catalog.json` 记录来源、
@@ -366,20 +366,30 @@ bbox、top1/top-k 和类别名称均在用户态计算。
 - [x] OpenLA500 Linux DMA smoke 串口输出 `abi=2`、`hw_abi=2`、
   `caps=0x3f`，结果为 16 B、checksum `0x685184b3`、bbox
   `58,132,81,104,137`、`perf_cycle=734915`，最终输出
-  `NPU_LINUX_PASS`。
+  `NPU_LINUX_PASS`；
+- [x] 阶段 4：固化小端 `.xnpu` v1，四个 catalog target 都有确定性部署包和
+  独立二进制 fixture；每个 section 使用 CRC32，整包使用 SHA-256；
+- [x] 阶段 4：实现无第三方依赖的 Python reference packer/inspect 和纯 C
+  `libxnpu`、`xnpu-inspect`、`xnpu-run`、`xnpu-regress`；
+- [x] 阶段 4：C/Python 解析器完成四包正向测试和坏 magic、坏 hash、坏 CRC、
+  错位 section、截断文件测试，用户态工具完成 LA32 静态交叉编译；
+- [x] 阶段 4：OpenLA500 Linux 从 `.xnpu` 二进制包加载 FaceNet，不再在目标端
+  解析参数 HEX；串口输出 `XNPU_STAGE4_PASS`，数值和阶段 3 金标准一致。
 
-尚未开始阶段 4 的 `.xnpu` 格式、packer、`libxnpu`、`xnpu-run` 或原生编译器。
+原生 `xnpu-cc` 编译后端尚未开始；当前 packer 仍使用 Python，但经过验证的
+`.xnpu` 已提交仓库，因此目标 rootfs、Linux 运行时和演示部署不依赖 Python、
+NumPy 或 PyTorch。
 
 ### 阶段 4：模型包与用户态运行时
 
-定义稳定的小端部署格式 `*.xnpu`。建议至少包含：
+已定义稳定的小端部署格式 `*.xnpu` v1：
 
 ```text
 header:
   magic
   package_version
   hardware_abi
-  model_id / model_name
+  model_id
   task
   input mode / shape / layout / dtype / bytes
   output shape / layout / dtype / bytes
@@ -390,6 +400,7 @@ header:
 sections:
   descriptors
   parameter image
+  model name
   optional labels
   optional preprocess/postprocess metadata
 
@@ -401,16 +412,26 @@ integrity:
 模型名称、标签和预处理元数据只用于用户态；内核只依赖硬件 ABI 和有边界的二进制
 section。
 
-近期先扩展现有 Python 编译链或增加轻量 packer 来生成 `.xnpu`。发布仓库提交
-经过验证的模型包，因此 Linux 构建、目标 rootfs 和最终演示都不依赖 PyTorch、
-NumPy 或 Python 环境。
+完整字节布局、保留字段规则、section 类型、包 hash 的“hash 字段置零”规则和
+兼容性策略见
+[`chiplab/IP/NPU/models/XNPU_FORMAT.md`](../chiplab/IP/NPU/models/XNPU_FORMAT.md)。
+`xnpu_pack.py` 从 catalog 中的已验证 HEX 资产生成包并检查源文件 SHA；发布
+仓库提交生成后的包，因此 Linux 构建、目标 rootfs 和最终演示都不依赖
+PyTorch、NumPy 或 Python 环境。
 
-用户态至少提供：
+当前用户态提供：
 
 - `xnpu-inspect`：显示模型 ABI、输入输出契约、大小和 hash；
 - `xnpu-run`：加载模型、提交一个输入并打印结果；
 - `libxnpu`：供摄像头和图形界面复用；
 - 回归工具：按清单连续切换模型并检查 checksum/top1/bbox。
+
+`libxnpu` 在用户态完成包边界、版本、CRC/SHA、硬件 ABI/capability 和驱动上限
+检查，再将受限的 descriptor/parameter section 交给 UAPI v2。测试 fixture
+不嵌入模型包，以免部署包和回归数据混淆。
+
+阶段 4 只用 FaceNet seed42 完成了一次真实 RTL 包加载验证；四模型清单已经
+生成，实际连续切换和第二个 FaceNet fixture 从阶段 5 开始执行。
 
 ### 阶段 5：OpenLA500 Linux RTL 验证
 
@@ -563,14 +584,15 @@ descriptor 和结果配置；scratch/result 可以按最大需求共享。必须
 ## 9. 近期交付物清单
 
 - [x] 从旧工程迁移四个模型 target、参数和 fixture，并记录来源/hash；
-- [ ] 固化 `*.xnpu` v1 文件格式；
-- [ ] 实现 Python reference packer 和 `xnpu-inspect`；
+- [x] 固化 `*.xnpu` v1 文件格式；
+- [x] 实现 Python reference packer 和 `xnpu-inspect`；
 - [x] 在仿真与 FPGA SoC 中增加 NPU 第三个逻辑 AXI initiator；
 - [x] 启用可选 `USE_AXI_DMA=1` 并完成 RAM/DMA 集成回归；
 - [x] 实现 Linux UAPI v2 和单活动模型 DMA 管理；
-- [ ] 实现 `libxnpu`、`xnpu-run` 和四模型切换回归；
+- [x] 实现 `libxnpu`、`xnpu-run` 和清单驱动的回归工具；
+- [ ] 执行 FaceNet -> LeNet -> VGG-S1 -> VGG-S2b -> FaceNet 连续切换回归；
 - [ ] 在 OpenLA500 Linux RTL 仿真中完成四模型端到端验证（阶段 3 只验证
-  FaceNet DMA 金标准）；
+  FaceNet DMA 金标准，阶段 4 已验证 FaceNet `.xnpu` 包路径）；
 - [ ] 完成 nscscc-team Vivado 综合、bitstream 和 FPGA 回归；
 - [ ] 完成摄像头/图片展示程序；
 - [ ] 在运行时稳定后实现原生 `xnpu-cc` 后端。

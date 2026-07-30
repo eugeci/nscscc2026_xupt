@@ -11,7 +11,8 @@ The integration provides:
 - ABI-v1 compatibility for the fixed ROM/MMIO FaceNet path;
 - ABI v2 for capability discovery, one active DMA model, generic input and
   result tensors;
-- a built-in initramfs whose `/init` runs an end-to-end NPU smoke test.
+- selectable Stage-3 and Stage-4 initramfs smoke programs;
+- native `libxnpu`, package inspection, inference and manifest regression tools;
 - a no-trace Chiplab Verilator boot path for the pinned OpenLA500 baseline.
 
 ## Build
@@ -22,6 +23,18 @@ LA32R GNU toolchain distributed under `chiplab/toolchains`.
 ```sh
 ./linux/npu/build.sh
 ```
+
+This keeps the Stage-3 HEX-backed smoke as the default. Build the Stage-4
+binary-package path with:
+
+```sh
+NPU_INIT=stage4 ./linux/npu/build.sh
+```
+
+The Stage-4 initramfs contains the checked-in FaceNet `.xnpu` and binary
+fixture. Set `NPU_INCLUDE_TOOLS=1` as well to include `xnpu-inspect`,
+`xnpu-run` and `xnpu-regress`; the minimal cycle-accurate boot omits the three
+duplicate static executables to save RAM and simulation time.
 
 The resulting kernel is:
 
@@ -43,6 +56,16 @@ dma status=0x4b00000a result_status=0x00000002 bytes=16 checksum=0x685184b3 shap
 NPU_LINUX_PASS
 ```
 
+The Stage-4 package run validates the package on the LA32 target, loads its
+binary descriptor and parameter sections, and prints:
+
+```text
+package=facenet_bbox model_id=65537 abi=2 layers=10 input=19200 parameters=84392 sha256=af466fe36f009520c6f0a8bfbf3d50884344b785b326d74e2904d5eb278c4199
+driver_abi=2 hardware_abi=2 caps=0x0000003f
+bytes=16 checksum=0x685184b3 bbox=58,132,81,104,137 perf_cycle=734915
+XNPU_STAGE4_PASS
+```
+
 After printing the marker, `/init` sleeps forever so the kernel does not panic
 from an init-process exit.  End the Verilator process after capturing the
 marker; the resulting termination status is not an inference failure.
@@ -55,10 +78,11 @@ First prepare the repository's pinned OpenLA500 baseline:
 ./baselines/openla500/prepare.sh
 ```
 
-Build the kernel, then compile the no-waveform DMA Verilator model once:
+Build the desired kernel, then compile the no-waveform DMA Verilator model
+once:
 
 ```sh
-./linux/npu/build.sh
+NPU_INIT=stage4 ./linux/npu/build.sh
 
 cd chiplab/sims/verilator/run_prog
 CHIPLAB_HOME="$PWD/../../.." make compile \
@@ -119,6 +143,34 @@ remains available for ROM/MMIO regression.  Structure definitions, limits,
 state transitions and error recovery are specified in
 [`UAPI.md`](UAPI.md).
 
-Stage 3 stops at this segmented model UAPI and its FaceNet end-to-end test.
-The `*.xnpu` package parser, model catalog CLI and native target-side compiler
-are intentionally deferred to Stage 4.
+## Model packages and native userspace
+
+The format is specified in
+[`chiplab/IP/NPU/models/XNPU_FORMAT.md`](../../chiplab/IP/NPU/models/XNPU_FORMAT.md).
+Four deterministic packages and standalone fixtures are checked in under
+`chiplab/IP/NPU/models/{packages,fixtures/bin}`. Rebuild and validate them:
+
+```sh
+python3 chiplab/IP/NPU/scripts/xnpu_pack.py
+python3 chiplab/IP/NPU/scripts/test_xnpu_package.py -v
+```
+
+Python is a reference build-time tool only. The target consumes the committed
+binary packages through the dependency-free C library:
+
+```sh
+make -C linux/npu/userspace \
+  PACKAGES_DIR="$PWD/chiplab/IP/NPU/models/packages" all test
+
+xnpu-inspect facenet_lbp_v1.xnpu
+xnpu-run --expect-checksum 0x685184b3 \
+  --expect-bbox 58,132,81,104,137 \
+  facenet_lbp_v1.xnpu facenet_seed42.bin
+xnpu-regress regression.tsv
+```
+
+See [`userspace/README.md`](userspace/README.md) for the library lifecycle,
+cross-build command and regression manifest.
+
+Stage 4 provides the deployment package and runtime, but does not claim the
+Stage-5 four-model RTL loop or the future native `xnpu-cc` compiler backend.

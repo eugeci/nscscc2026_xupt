@@ -11,6 +11,11 @@ init_program="$rootfs_dir/init"
 initramfs_list="$work_dir/initramfs.list"
 fixture_dir="$repo_root/chiplab/IP/NPU/models/fixtures"
 parameter_hex="$repo_root/chiplab/IP/NPU/params/npu_params.hex"
+package_dir="$repo_root/chiplab/IP/NPU/models/packages"
+binary_fixture_dir="$fixture_dir/bin"
+userspace_dir="$script_dir/userspace"
+userspace_build="$work_dir/userspace-la32"
+init_kind="${NPU_INIT:-stage3}"
 
 if [ -n "${CROSS_COMPILE:-}" ]; then
 	cross_compile=$CROSS_COMPILE
@@ -28,12 +33,26 @@ fi
 
 mkdir -p "$build_dir" "$rootfs_dir"
 
-"$cc" -static -Os -Wall -Wextra \
-	-I"$script_dir/kernel/include/uapi" \
-	-I"$script_dir/userspace/fixture_shim" \
-	-I"$fixture_dir" \
-	"$script_dir/userspace/npu_smoke.c" \
-	-o "$init_program"
+case "$init_kind" in
+stage3)
+	"$cc" -static -Os -Wall -Wextra \
+		-I"$script_dir/kernel/include/uapi" \
+		-I"$script_dir/userspace/fixture_shim" \
+		-I"$fixture_dir" \
+		"$script_dir/userspace/npu_smoke.c" \
+		-o "$init_program"
+	;;
+stage4)
+	make -C "$userspace_dir" BUILD_DIR="$userspace_build" \
+		CC="$cc" AR="${cross_compile}ar" CFLAGS="-Os" LDFLAGS="-static" \
+		all "$userspace_build/xnpu-stage4-smoke"
+	cp "$userspace_build/xnpu-stage4-smoke" "$init_program"
+	;;
+*)
+	echo "Unknown NPU_INIT=$init_kind (expected stage3 or stage4)" >&2
+	exit 2
+	;;
+esac
 
 {
 	echo "dir /dev 0755 0 0"
@@ -42,7 +61,21 @@ mkdir -p "$build_dir" "$rootfs_dir"
 	echo "nod /dev/console 0600 0 0 c 5 1"
 	echo "nod /dev/null 0666 0 0 c 1 3"
 	echo "file /init $init_program 0755 0 0"
-	echo "file /npu_params.hex $parameter_hex 0444 0 0"
+	if [ "$init_kind" = stage3 ]; then
+		echo "file /npu_params.hex $parameter_hex 0444 0 0"
+	else
+		echo "dir /models 0555 0 0"
+		echo "dir /fixtures 0555 0 0"
+		echo "file /models/facenet_lbp_v1.xnpu $package_dir/facenet_lbp_v1.xnpu 0444 0 0"
+		echo "file /fixtures/facenet_seed42.bin $binary_fixture_dir/facenet_seed42.bin 0444 0 0"
+		if [ "${NPU_INCLUDE_TOOLS:-0}" = 1 ]; then
+			echo "dir /usr 0555 0 0"
+			echo "dir /usr/bin 0555 0 0"
+			echo "file /usr/bin/xnpu-inspect $userspace_build/xnpu-inspect 0555 0 0"
+			echo "file /usr/bin/xnpu-run $userspace_build/xnpu-run 0555 0 0"
+			echo "file /usr/bin/xnpu-regress $userspace_build/xnpu-regress 0555 0 0"
+		fi
+	fi
 } > "$initramfs_list"
 
 make -C "$kernel_dir" O="$build_dir" ARCH=loongarch \
@@ -107,4 +140,4 @@ make -C "$kernel_dir" O="$build_dir" ARCH=loongarch \
 make -C "$kernel_dir" O="$build_dir" ARCH=loongarch \
 	CROSS_COMPILE="$cross_compile" -j"${JOBS:-$(getconf _NPROCESSORS_ONLN)}" vmlinux
 
-echo "Built $build_dir/vmlinux"
+echo "Built $build_dir/vmlinux with NPU_INIT=$init_kind"
