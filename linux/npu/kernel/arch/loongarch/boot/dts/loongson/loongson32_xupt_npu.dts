@@ -33,6 +33,8 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 		ranges = <0x10000000 0x10000000 0x10000000>;
+		/* The NPU RAM master observes the same 32-bit physical addresses. */
+		dma-ranges;
 
 		npu: accelerator@1f100000 {
 			compatible = "xupt,npu-v1";
