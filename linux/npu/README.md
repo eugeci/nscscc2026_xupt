@@ -172,5 +172,6 @@ xnpu-regress regression.tsv
 See [`userspace/README.md`](userspace/README.md) for the library lifecycle,
 cross-build command and regression manifest.
 
-Stage 4 provides the deployment package and runtime, but does not claim the
-Stage-5 four-model RTL loop or the future native `xnpu-cc` compiler backend.
+Stage 5 validates the four-model RTL loop and reset/reload recovery on the
+fixed OpenLA500 baseline. The future native `xnpu-cc` compiler backend remains
+out of scope for the current runtime.

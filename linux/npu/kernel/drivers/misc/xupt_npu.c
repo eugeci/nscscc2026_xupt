@@ -16,6 +16,7 @@
 #include <linux/iopoll.h>
 #include <linux/jiffies.h>
 #include <linux/kernel.h>
+#include <linux/ktime.h>
 #include <linux/miscdevice.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
@@ -104,6 +105,8 @@ struct xupt_npu_dma_buffer {
 	void *cpu_addr;
 	dma_addr_t dma_addr;
 	size_t bytes;
+	enum dma_data_direction direction;
+	bool noncoherent;
 };
 
 struct xupt_npu {
@@ -155,10 +158,29 @@ static bool xupt_npu_u32_array_is_zero(const u32 *values, size_t count)
 static void xupt_npu_free_dma_buffer(struct xupt_npu *npu,
 				     struct xupt_npu_dma_buffer *buffer)
 {
-	if (buffer->cpu_addr)
-		dma_free_coherent(npu->dev, buffer->bytes, buffer->cpu_addr,
-				  buffer->dma_addr);
+	if (buffer->cpu_addr) {
+		if (buffer->noncoherent)
+			dma_free_noncoherent(npu->dev, buffer->bytes,
+					     buffer->cpu_addr, buffer->dma_addr,
+					     buffer->direction);
+		else
+			dma_free_coherent(npu->dev, buffer->bytes,
+					  buffer->cpu_addr, buffer->dma_addr);
+	}
 	memset(buffer, 0, sizeof(*buffer));
+}
+
+static int xupt_npu_check_dma_buffer(struct xupt_npu *npu,
+				     struct xupt_npu_dma_buffer *buffer,
+				     size_t bytes)
+{
+	buffer->bytes = bytes;
+	if (upper_32_bits(buffer->dma_addr) ||
+	    bytes - 1 > U32_MAX - lower_32_bits(buffer->dma_addr)) {
+		xupt_npu_free_dma_buffer(npu, buffer);
+		return -ERANGE;
+	}
+	return 0;
 }
 
 static int xupt_npu_alloc_dma_buffer(struct xupt_npu *npu,
@@ -171,14 +193,24 @@ static int xupt_npu_alloc_dma_buffer(struct xupt_npu *npu,
 		return -ENOMEM;
 	buffer->bytes = bytes;
 
-	if (upper_32_bits(buffer->dma_addr) ||
-	    bytes - 1 > U32_MAX - lower_32_bits(buffer->dma_addr)) {
-		xupt_npu_free_dma_buffer(npu, buffer);
-		return -ERANGE;
-	}
-
 	memset(buffer->cpu_addr, 0, bytes);
-	return 0;
+	return xupt_npu_check_dma_buffer(npu, buffer, bytes);
+}
+
+static int xupt_npu_alloc_noncoherent_dma_buffer(
+	struct xupt_npu *npu, struct xupt_npu_dma_buffer *buffer,
+	size_t bytes, enum dma_data_direction direction)
+{
+	buffer->cpu_addr = dma_alloc_noncoherent(npu->dev, bytes,
+						 &buffer->dma_addr, direction,
+						 GFP_KERNEL);
+	if (!buffer->cpu_addr)
+		return -ENOMEM;
+	buffer->bytes = bytes;
+	buffer->direction = direction;
+	buffer->noncoherent = true;
+	memset(buffer->cpu_addr, 0, bytes);
+	return xupt_npu_check_dma_buffer(npu, buffer, bytes);
 }
 
 static void xupt_npu_drop_model(struct xupt_npu *npu)
@@ -469,8 +501,14 @@ static int xupt_npu_load_model(struct xupt_npu *npu,
 	if (ret)
 		goto out_descriptors;
 
-	ret = xupt_npu_alloc_dma_buffer(npu, &parameter,
-					request->parameter_bytes);
+	/*
+	 * Keep the CPU mapping cacheable while loading the immutable parameter
+	 * image, then hand it to the accelerator through the streaming DMA API.
+	 * OpenLA500 loses some bulk CPU stores to dma_alloc_coherent()'s
+	 * uncached alias.
+	 */
+	ret = xupt_npu_alloc_noncoherent_dma_buffer(
+		npu, &parameter, request->parameter_bytes, DMA_TO_DEVICE);
 	if (ret)
 		goto out_descriptors;
 	if (copy_from_user(parameter.cpu_addr,
@@ -479,6 +517,8 @@ static int xupt_npu_load_model(struct xupt_npu *npu,
 		ret = -EFAULT;
 		goto out_buffers;
 	}
+	dma_sync_single_for_device(npu->dev, parameter.dma_addr,
+				   parameter.bytes, DMA_TO_DEVICE);
 
 	ret = xupt_npu_alloc_dma_buffer(npu, &scratch, request->scratch_bytes);
 	if (ret)
@@ -765,7 +805,7 @@ static int xupt_npu_wait_terminal(struct xupt_npu *npu, u32 timeout_ms,
 				   u32 *status_out)
 {
 	unsigned long timeout;
-	unsigned long deadline;
+	ktime_t deadline;
 	u32 result_status;
 	u32 status;
 	long wait_ret;
@@ -784,14 +824,14 @@ static int xupt_npu_wait_terminal(struct xupt_npu *npu, u32 timeout_ms,
 		if (!wait_ret)
 			return -ETIMEDOUT;
 	} else {
-		deadline = jiffies + timeout;
+		deadline = ktime_add_ms(ktime_get(), timeout_ms);
 		do {
 			status = xupt_npu_read(npu, XUPT_NPU_REG_STATUS);
 			if (status & (XUPT_NPU_STATUS_DONE |
 				      XUPT_NPU_STATUS_ERROR))
 				break;
 			usleep_range(100, 200);
-		} while (time_before(jiffies, deadline));
+		} while (ktime_before(ktime_get(), deadline));
 	}
 
 	status = xupt_npu_read(npu, XUPT_NPU_REG_STATUS);

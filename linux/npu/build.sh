@@ -42,14 +42,14 @@ stage3)
 		"$script_dir/userspace/npu_smoke.c" \
 		-o "$init_program"
 	;;
-stage4)
+stage4|stage5)
 	make -C "$userspace_dir" BUILD_DIR="$userspace_build" \
 		CC="$cc" AR="${cross_compile}ar" CFLAGS="-Os" LDFLAGS="-static" \
-		all "$userspace_build/xnpu-stage4-smoke"
-	cp "$userspace_build/xnpu-stage4-smoke" "$init_program"
+		all "$userspace_build/xnpu-$init_kind-smoke"
+	cp "$userspace_build/xnpu-$init_kind-smoke" "$init_program"
 	;;
 *)
-	echo "Unknown NPU_INIT=$init_kind (expected stage3 or stage4)" >&2
+	echo "Unknown NPU_INIT=$init_kind (expected stage3, stage4 or stage5)" >&2
 	exit 2
 	;;
 esac
@@ -68,6 +68,15 @@ esac
 		echo "dir /fixtures 0555 0 0"
 		echo "file /models/facenet_lbp_v1.xnpu $package_dir/facenet_lbp_v1.xnpu 0444 0 0"
 		echo "file /fixtures/facenet_seed42.bin $binary_fixture_dir/facenet_seed42.bin 0444 0 0"
+		if [ "$init_kind" = stage5 ]; then
+			echo "file /models/mnist_lenet_v1.xnpu $package_dir/mnist_lenet_v1.xnpu 0444 0 0"
+			echo "file /models/npu_vgg_s1_v1.xnpu $package_dir/npu_vgg_s1_v1.xnpu 0444 0 0"
+			echo "file /models/npu_vgg_s2b_v1.xnpu $package_dir/npu_vgg_s2b_v1.xnpu 0444 0 0"
+			echo "file /fixtures/facenet_seed7.bin $binary_fixture_dir/facenet_seed7.bin 0444 0 0"
+			echo "file /fixtures/mnist_lenet_7.bin $binary_fixture_dir/mnist_lenet_7.bin 0444 0 0"
+			echo "file /fixtures/npu_vgg_s1_demo.bin $binary_fixture_dir/npu_vgg_s1_demo.bin 0444 0 0"
+			echo "file /fixtures/npu_vgg_s2b_demo.bin $binary_fixture_dir/npu_vgg_s2b_demo.bin 0444 0 0"
+		fi
 		if [ "${NPU_INCLUDE_TOOLS:-0}" = 1 ]; then
 			echo "dir /usr 0555 0 0"
 			echo "dir /usr/bin 0555 0 0"

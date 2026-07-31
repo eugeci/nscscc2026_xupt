@@ -42,6 +42,10 @@ $(BUILD_DIR)/xnpu-stage4-smoke: xnpu_stage4_smoke.c $(BUILD_DIR)/libxnpu.a
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(BUILD_DIR)/libxnpu.a \
 		$(LDFLAGS) -o $@
 
+$(BUILD_DIR)/xnpu-stage5-smoke: xnpu_stage5_smoke.c $(BUILD_DIR)/libxnpu.a
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(BUILD_DIR)/libxnpu.a \
+		$(LDFLAGS) -o $@
+
 $(BUILD_DIR)/test-xnpu-format: tests/test_xnpu_format.c \
 		$(BUILD_DIR)/libxnpu.a
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(BUILD_DIR)/libxnpu.a \

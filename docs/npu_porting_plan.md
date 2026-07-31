@@ -345,7 +345,7 @@ result payload
 
 bbox、top1/top-k 和类别名称均在用户态计算。
 
-### 截止阶段 4 的实现记录
+### 截止阶段 5 的实现记录
 
 当前已经完成：
 
@@ -357,8 +357,8 @@ bbox、top1/top-k 和类别名称均在用户态计算。
 - [x] 阶段 2：增加只读 hardware ABI/capability 寄存器，裸机 BSP 增加对应
   查询接口，保留 parameter/scratch/result/packed-preload API；
 - [x] 阶段 3：发布 UAPI v2，驱动实现单打开者、单活动模型、32-bit DMA mask、
-  coherent parameter/scratch/result 缓冲区、输入模式、IRQ/轮询、通用结果
-  tensor 与 v1 兼容；
+  parameter streaming DMA、coherent scratch/result 缓冲区、输入模式、IRQ/轮询、
+  通用结果 tensor 与 v1 兼容；
 - [x] 阶段 3：initramfs smoke 根据 capability 自动选择 ROM v1 或 DMA v2，
   DMA 路径加载 FaceNet 参数并检查 result byte count、checksum 和 bbox；
 - [x] Linux 5.14 内核、设备树、驱动和静态 smoke 完整交叉编译；
@@ -375,6 +375,10 @@ bbox、top1/top-k 和类别名称均在用户态计算。
   错位 section、截断文件测试，用户态工具完成 LA32 静态交叉编译；
 - [x] 阶段 4：OpenLA500 Linux 从 `.xnpu` 二进制包加载 FaceNet，不再在目标端
   解析参数 HEX；串口输出 `XNPU_STAGE4_PASS`，数值和阶段 3 金标准一致。
+- [x] 阶段 5：OpenLA500 Linux RTL 完成
+  `FaceNet -> LeNet -> VGG-S1 -> VGG-S2b -> FaceNet` 连续切换、8 次 golden
+  推理、4 个包错误、3 个驱动错误和 reset/reload 恢复测试，最终输出
+  `XNPU_STAGE5_PASS items=8 package_errors=4 driver_errors=3 recovery=1`。
 
 原生 `xnpu-cc` 编译后端尚未开始；当前 packer 仍使用 Python，但经过验证的
 `.xnpu` 已提交仓库，因此目标 rootfs、Linux 运行时和演示部署不依赖 Python、
@@ -450,6 +454,26 @@ PyTorch、NumPy 或 Python 环境。
 8. 注入坏 magic、坏 checksum、超长 section、错误 descriptor 和 timeout；
 9. reset 后重新加载模型并恢复推理；
 10. 运行处理器原有 func、性能和 Linux 启动回归。
+
+阶段 5 已在固定 OpenLA500 baseline 上完成上述 1–9 项。关键 golden 包括：
+
+- FaceNet seed42 `0x685184b3`、seed7 `0x5d5d7d3d`；
+- LeNet `0xe5330809`，top1 为 7；
+- TinyVGG-S1 `0x070006eb`，top1 为 0；
+- TinyVGG-S2b `0x00460f09`，top1 为 2。
+
+排查 LeNet 和 TinyVGG-S1 数值偏差时确认了两个集成问题：
+
+1. wrapper 曾在整个输入流期间保持 `i_frame_valid` 为高，短网络在输入流结束前
+   回到 idle 后会被再次触发；现改为每次接受 start 时只产生一个新帧脉冲。
+2. OpenLA500 当前 LA32 Linux 的 `dma_alloc_coherent()` uncached CPU alias 在批量
+   写参数时会留下零洞；模型包和 initramfs 的 SHA-256 均正确，NPU AXI DMA
+   本身也通过独立对照。参数缓冲区现使用 cached noncoherent 映射，在
+   `copy_from_user()` 后用 `dma_sync_single_for_device(..., DMA_TO_DEVICE)` 写回
+   cache，再交给 NPU。修复后 LeNet 和 TinyVGG-S1 均恢复为上述精确 golden。
+
+轮询 timeout 同时改用 `ktime` 截止时间，避免快速 RTL 仿真中低频 jiffies 令
+1 ms 错误注入用例失去确定性。
 
 当前 RTL Linux 验证设备树只声明 16 MiB RAM。实现 DMA 前应测量 kernel/initramfs
 占用和最大 scratch 需求；不足时提高仿真 RAM 到 32/64 MiB。该调整不改变 FPGA
@@ -590,9 +614,8 @@ descriptor 和结果配置；scratch/result 可以按最大需求共享。必须
 - [x] 启用可选 `USE_AXI_DMA=1` 并完成 RAM/DMA 集成回归；
 - [x] 实现 Linux UAPI v2 和单活动模型 DMA 管理；
 - [x] 实现 `libxnpu`、`xnpu-run` 和清单驱动的回归工具；
-- [ ] 执行 FaceNet -> LeNet -> VGG-S1 -> VGG-S2b -> FaceNet 连续切换回归；
-- [ ] 在 OpenLA500 Linux RTL 仿真中完成四模型端到端验证（阶段 3 只验证
-  FaceNet DMA 金标准，阶段 4 已验证 FaceNet `.xnpu` 包路径）；
+- [x] 执行 FaceNet -> LeNet -> VGG-S1 -> VGG-S2b -> FaceNet 连续切换回归；
+- [x] 在 OpenLA500 Linux RTL 仿真中完成四模型端到端和错误恢复验证；
 - [ ] 完成 nscscc-team Vivado 综合、bitstream 和 FPGA 回归；
 - [ ] 完成摄像头/图片展示程序；
 - [ ] 在运行时稳定后实现原生 `xnpu-cc` 后端。
