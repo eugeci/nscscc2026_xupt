@@ -35,7 +35,6 @@ chiplab/fpga/loongson/2023.2/system_run.xpr
 docs/      使用手册、时钟和寄存器说明
 esp32/     ESP32 MicroPython 文件
 linux/     arm、cam、lcdctl、贪吃蛇和 LCD 图片资源
-tools/     串口安装及调试脚本
 ```
 
 常用命令和接线说明见 [QUICK_START.md](QUICK_START.md)。
