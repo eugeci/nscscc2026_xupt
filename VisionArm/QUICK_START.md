@@ -1,5 +1,14 @@
 # VisionArm 快速使用
 
+## 0. 直接演示
+
+`release/` 中已经提供：
+
+- `visionarm_soc_top.bit`
+- `vmlinux_visionarm_lcd`
+
+不需要重新综合时可直接使用这两个文件。
+
 ## 1. FPGA 工程
 
 Vivado 2023.2 打开：

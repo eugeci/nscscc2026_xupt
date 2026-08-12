@@ -40,4 +40,4 @@ tools/     串口安装及调试脚本
 
 常用命令和接线说明见 [QUICK_START.md](QUICK_START.md)。
 
-> 当前 Git 分支提供源码和工具，不包含已生成的 bitstream 与 Linux 内核二进制。
+已验证的比特流与 Linux 内核位于 [`release/`](release/) 目录，可直接用于下板演示。
