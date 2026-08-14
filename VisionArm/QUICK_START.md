@@ -73,6 +73,7 @@ ESP32 文件位于 `VisionArm/esp32/filesystem/`。
 
 - `docs/视觉机械臂使用手册.md`
 - `docs/XNPU积木识别闭环演示与标定指南.md`
+- `docs/闭环演示硬件待确认清单.md`
 - `docs/寄存器映射.md`
 - `docs/时钟说明.md`
 - `docs/更新记录.md`

@@ -11,6 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 #include "xnpu.h"
+#include "calibration.h"
 
 #define CAM_BASE 0x1fd0e100U
 #define CAM_CTRL 0U
@@ -27,8 +28,9 @@ enum color { RED, GREEN, BLUE };
 struct box { int x0, y0, x1, y1; unsigned count; };
 struct map { void *base; size_t length; volatile uint8_t *ptr; };
 struct opts {
-	enum color color; const char *model; unsigned class_id, loops;
-	bool control, invert_x, invert_y, self_test;
+	enum color color; const char *model; const char *calibration;
+	unsigned class_id, loops;
+	bool control, invert_x, invert_y, self_test, check_calibration;
 };
 
 static void msleep(unsigned ms)
@@ -123,7 +125,9 @@ static int infer(struct xnpu_device *dev, const struct xnpu_package *pkg,
 static void usage(FILE *f)
 {
 	fputs("usage: visionarm-block [--color red|green|blue] [--model FILE] "
-	      "[--class N] [--loops N] [--control] [--invert-x] [--invert-y]\n", f);
+	      "[--class N] [--calibration FILE] [--loops N] [--control] "
+	      "[--invert-x] [--invert-y]\n"
+	      "       visionarm-block --calibration FILE --check-calibration\n", f);
 }
 
 static int parse(int argc, char **argv, struct opts *o)
@@ -135,6 +139,7 @@ static int parse(int argc, char **argv, struct opts *o)
 			else if (!strcmp(argv[i], "green")) o->color = GREEN;
 			else if (!strcmp(argv[i], "blue")) o->color = BLUE; else return -1;
 		} else if (!strcmp(argv[i], "--model") && ++i < argc) o->model = argv[i];
+		else if (!strcmp(argv[i], "--calibration") && ++i < argc) o->calibration = argv[i];
 		else if ((!strcmp(argv[i], "--class") || !strcmp(argv[i], "--loops")) && i + 1 < argc) {
 			bool is_class = !strcmp(argv[i], "--class"); unsigned long n = strtoul(argv[++i], &end, 0);
 			if (*end) return -1;
@@ -144,6 +149,7 @@ static int parse(int argc, char **argv, struct opts *o)
 		else if (!strcmp(argv[i], "--invert-x")) o->invert_x = true;
 		else if (!strcmp(argv[i], "--invert-y")) o->invert_y = true;
 		else if (!strcmp(argv[i], "--self-test")) o->self_test = true;
+		else if (!strcmp(argv[i], "--check-calibration")) o->check_calibration = true;
 		else return -1;
 	}
 	return 0;
@@ -157,6 +163,7 @@ static int self_test(void)
 		size_t p = (size_t)y * STRIDE + x * 2U; f[p] = 0; f[p + 1] = 0xf8;
 	}
 	ok = locate(f, RED, &b) && b.x0 == 200 && b.y0 == 100 && b.x1 == 358 && b.y1 == 218;
+	ok = ok && !visionarm_calibration_self_test();
 	free(f); puts(ok ? "VISIONARM_BLOCK_SELF_TEST_PASS" : "VISIONARM_BLOCK_SELF_TEST_FAIL");
 	return !ok;
 }
@@ -165,11 +172,38 @@ int main(int argc, char **argv)
 {
 	struct opts o; struct map regs = {0}, fb = {0}, uart = {0};
 	struct xnpu_package pkg; struct xnpu_device dev; volatile uint32_t *cam;
-	int fd = -1, rc = 1; unsigned frame = 0, stable = 0, moves = 0; bool npu = false;
+	struct visionarm_calibration calibration;
+	char calibration_error[160];
+	int fd = -1, rc = 1; unsigned frame = 0, stable = 0, moves = 0;
+	bool npu = false, calibrated = false;
 	memset(&pkg, 0, sizeof(pkg)); memset(&dev, 0, sizeof(dev)); dev.fd = -1;
 	if (parse(argc, argv, &o)) { usage(stderr); return 2; }
 	if (o.self_test) return self_test();
-	if (o.control && !o.model) { fputs("--control requires --model\n", stderr); return 2; }
+	if (o.check_calibration && !o.calibration) {
+		fputs("--check-calibration requires --calibration\n", stderr);
+		return 2;
+	}
+	if (o.calibration) {
+		rc = visionarm_calibration_load(o.calibration, &calibration,
+						calibration_error, sizeof(calibration_error));
+		if (rc) {
+			fprintf(stderr, "calibration: %s\n", calibration_error);
+			return 2;
+		}
+		if (o.invert_x) calibration.invert_axis[0] = !calibration.invert_axis[0];
+		if (o.invert_y) calibration.invert_axis[1] = !calibration.invert_axis[1];
+		calibrated = true;
+	}
+	if (o.check_calibration) {
+		printf("CALIBRATION_CHECK_PASS axes=%c,%c work_zero=%d,%d,%d\n",
+		       calibration.alignment_axes[0], calibration.alignment_axes[1],
+		       calibration.work_zero[0], calibration.work_zero[1], calibration.work_zero[2]);
+		return 0;
+	}
+	if (o.control && (!o.model || !calibrated)) {
+		fputs("--control requires --model and a validated --calibration file\n", stderr);
+		return 2;
+	}
 	if (o.model) {
 		rc = xnpu_package_open(&pkg, o.model); if (rc) goto done;
 		if (pkg.info.task != XNPU_TASK_CLASSIFICATION || pkg.info.input_mode != XNPU_INPUT_PACKED_PRELOAD ||
@@ -198,14 +232,29 @@ int main(int argc, char **argv)
 			       frame, b.x0, b.y0, b.x1, b.y1, top, margin, stable);
 		} else printf("frame=%u bbox=%d,%d,%d,%d pixels=%u npu=disabled\n",
 			      frame, b.x0, b.y0, b.x1, b.y1, b.count);
-		if (o.control && stable >= 3U) {
-			int ex = (b.x0 + b.x1) / 2 - WIDTH / 2, ey = (b.y0 + b.y1) / 2 - HEIGHT / 2;
-			uint8_t cmd = 0; bool positive;
-			if (abs(ex) > 30) { positive = ex > 0; if (o.invert_x) positive = !positive; cmd = positive ? '1' : '2'; }
-			else if (abs(ey) > 30) { positive = ey < 0; if (o.invert_y) positive = !positive; cmd = positive ? '3' : '4'; }
+		if (calibrated) {
+			double table_x, table_y;
+			if (!visionarm_pixel_to_table(&calibration, (b.x0 + b.x1) / 2.0,
+						  (b.y0 + b.y1) / 2.0, &table_x, &table_y))
+				printf("table_mm=%.3f,%.3f\n", table_x, table_y);
+		}
+		if (o.control && stable >= (unsigned)calibration.stable_frames) {
+			double step0, step1;
+			int command = visionarm_alignment_command(&calibration,
+					(b.x0 + b.x1) / 2.0, (b.y0 + b.y1) / 2.0,
+					calibration.gripper_target_u,
+					calibration.gripper_target_v, &step0, &step1);
+			uint8_t cmd = command > 0 ? (uint8_t)command : 0U;
+			if (command < 0) { fputs("ERROR invalid calibration transform\n", stderr); rc = 1; goto done; }
 			if (!cmd) puts("state=ALIGNED");
-			else if (moves++ >= 30U) { fputs("ERROR max_moves\n", stderr); rc = 1; goto done; }
-			else { *(volatile uint32_t *)uart.ptr = cmd; printf("state=ALIGN command=%c\n", cmd); msleep(400); }
+			else if (moves++ >= (unsigned)calibration.max_align_moves) {
+				fputs("ERROR max_moves\n", stderr); rc = 1; goto done;
+			} else {
+				*(volatile uint32_t *)uart.ptr = cmd;
+				printf("state=ALIGN command=%c estimated_steps=%.1f,%.1f\n",
+				       cmd, step0, step1);
+				msleep(400);
+			}
 			stable = 0;
 		}
 		frame++; msleep(250);

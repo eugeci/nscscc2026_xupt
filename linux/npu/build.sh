@@ -18,6 +18,7 @@ userspace_build="$work_dir/userspace-la32"
 init_kind="${NPU_INIT:-stage3}"
 visionarm_dir="$repo_root/VisionArm"
 visionarm_rootfs="${VISIONARM_ROOTFS:-}"
+visionarm_calibration="${VISIONARM_CALIBRATION:-}"
 
 if [ -n "${CROSS_COMPILE:-}" ]; then
 	cross_compile=$CROSS_COMPILE
@@ -55,12 +56,19 @@ demo)
 		echo "NPU_INIT=demo requires VISIONARM_ROOTFS=<rootfs directory>" >&2
 		exit 2
 	fi
+	if [ -n "$visionarm_calibration" ] && [ ! -f "$visionarm_calibration" ]; then
+		echo "VISIONARM_CALIBRATION is not a file: $visionarm_calibration" >&2
+		exit 2
+	fi
 	make -C "$userspace_dir" BUILD_DIR="$userspace_build" \
 		CC="$cc" AR="${cross_compile}ar" CFLAGS="-Os" LDFLAGS="-static" all
 	"$cc" -static -Os -Wall -Wextra \
 		"$visionarm_dir/linux/snake/snake.c" -o "$work_dir/snake"
 	make -C "$visionarm_dir/linux/visionarm-block" \
 		BUILD_DIR="$work_dir/visionarm-block-la32" \
+		CC="$cc" CFLAGS="-Os" LDFLAGS="-static" all
+	make -C "$visionarm_dir/linux/visionarm-capture" \
+		BUILD_DIR="$work_dir/visionarm-capture-la32" \
 		CC="$cc" CFLAGS="-Os" LDFLAGS="-static" all
 	;;
 *)
@@ -79,10 +87,14 @@ esac
 		echo "file /usr/bin/lcdctl $visionarm_dir/linux/tools/lcdctl 0555 0 0"
 		echo "file /usr/bin/snake $work_dir/snake 0555 0 0"
 		echo "file /usr/bin/visionarm-block $work_dir/visionarm-block-la32/visionarm-block 0555 0 0"
+		echo "file /usr/bin/visionarm-capture $work_dir/visionarm-capture-la32/visionarm-capture 0555 0 0"
 		echo "file /usr/bin/xnpu-inspect $userspace_build/xnpu-inspect 0555 0 0"
 		echo "file /usr/bin/xnpu-run $userspace_build/xnpu-run 0555 0 0"
 		echo "file /usr/bin/xnpu-regress $userspace_build/xnpu-regress 0555 0 0"
 		echo "file /vision/naruto.rgb565 $visionarm_dir/linux/assets/naruto_800x480.rgb565 0444 0 0"
+		if [ -n "$visionarm_calibration" ]; then
+			echo "file /vision/calibration.ini $visionarm_calibration 0444 0 0"
+		fi
 		echo "file /models/facenet_lbp_v1.xnpu $package_dir/facenet_lbp_v1.xnpu 0444 0 0"
 		echo "file /fixtures/facenet_seed42.bin $binary_fixture_dir/facenet_seed42.bin 0444 0 0"
 	else

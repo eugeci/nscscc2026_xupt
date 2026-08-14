@@ -182,6 +182,16 @@ SoC负责：
 - 保持正常演示照明，避免自动曝光剧烈变化；
 - 从 SoC DDR framebuffer 保存原始 RGB565 帧并传到电脑。
 
+SoC端采集命令：
+
+```sh
+mkdir -p /tmp/calibration
+visionarm-capture --prefix /tmp/calibration/checkerboard --count 20
+```
+
+工具会为每帧保存 `.rgb565` 和包含frame count、camera status的 `.ini`。当前
+版本为了得到稳定帧会短暂停止DMA；活动乒乓buffer选择仍需按硬件清单H01验证。
+
 不要使用 VGA 采集画面代替 DDR 原始帧，因为 VGA 路径可能包含缩放、时序
 或采集卡二次处理。
 
@@ -243,39 +253,38 @@ p1, p2          切向畸变
 
 当前 FPGA 缺少 ESP32→SoC 回传。初次自动采集可采用保守固定等待并监视
 ESP32 USB串口；正式自动演示建议补充 UART RX、动作完成应答和坐标状态。
+当前仓库提供的是CSV拟合工具，自动发动作并采集图片的编排器要等应答通路和
+真实方向通过确认后再接入，现阶段不会自动驱动机械臂。
 
 ## 10. 标定文件建议
 
-电脑最终生成一个版本化文件，例如 `/etc/visionarm/calibration.ini`：
+电脑最终生成一个版本化文件；演示镜像默认部署为 `/vision/calibration.ini`：
 
 ```ini
 [meta]
 version=1
+validated=0
 image_width=640
 image_height=480
 
 [camera]
-fx=0
-fy=0
-cx=0
-cy=0
-k1=0
-k2=0
-p1=0
-p2=0
-k3=0
+matrix=0,0,0,0,0,0,0,0,0
+distortion=0,0,0,0,0
 
 [workspace]
 homography=1,0,0,0,1,0,0,0,1
 valid_polygon=0,0,639,0,639,479,0,479
 
 [arm]
+alignment_axes=x,z
 work_zero_x=0
 work_zero_y=0
 work_zero_z=0
 jacobian=0,0,0,0
+gripper_target_pixel=0,0
 invert_x=0
 invert_y=0
+invert_z=0
 max_x_steps=0
 max_y_steps=0
 max_z_steps=0
@@ -288,6 +297,22 @@ max_align_moves=30
 
 所有占位零值必须由实测替换。标定文件还应记录相机安装状态、标定板尺寸、
 日期和误差报告，以避免错误参数被用于另一套机械结构。
+
+电脑端工具位于 `VisionArm/tools/visionarm_calibrate/`：
+
+```sh
+python3 convert_rgb565.py frame_0000.rgb565 frame_0000.png
+python3 calibrate_camera.py --images 'checkerboard/*.png' \
+  --columns 9 --rows 6 --square-mm 20 --output calibration.ini
+python3 calibrate_workspace.py --points workspace.csv --config calibration.ini
+python3 calibrate_arm.py --samples arm.csv --axes x,z \
+  --work-zero 1000,2000,1500 --max-steps 8000,9000,10000 \
+  --target-pixel 315,238 --config calibration.ini
+python3 validate_calibration.py calibration.ini --mark-valid
+```
+
+验证工具只有在相机、工作台、机械臂矩阵、拟合误差和三轴实测最大行程均
+满足要求时才写入 `validated=1`。
 
 ## 11. 积木模型准备
 
@@ -323,8 +348,12 @@ make -C VisionArm/linux/visionarm-block test
 ```sh
 NPU_INIT=demo \
 VISIONARM_ROOTFS=/path/to/initrd_d \
+VISIONARM_CALIBRATION=/path/to/validated-calibration.ini \
 ./linux/npu/build.sh
 ```
+
+`VISIONARM_CALIBRATION`是可选项；提供时嵌入为 `/vision/calibration.ini`。
+构建脚本不会生成或默认启用占位标定参数。
 
 只观察颜色候选：
 
@@ -337,14 +366,16 @@ visionarm-block --color red --loops 100
 
 ```sh
 visionarm-block --color red \
-  --model /models/blocks_v1.xnpu --class 0 --loops 100
+  --model /models/blocks_v1.xnpu --class 0 \
+  --calibration /vision/calibration.ini --loops 100
 ```
 
 只有在机器回零、工作零点、方向、工作区和分类模型全部通过验收后，才允许：
 
 ```sh
 visionarm-block --color red \
-  --model /models/blocks_v1.xnpu --class 0 --control
+  --model /models/blocks_v1.xnpu --class 0 \
+  --calibration /vision/calibration.ini --control
 ```
 
 如果图像误差使机械臂远离目标，立即停止并用 `--invert-x` 或 `--invert-y`
@@ -387,8 +418,7 @@ visionarm-block --color red \
 ## 14. 当前缺项
 
 - 真实积木数据集和 `blocks_v1.xnpu`；
-- OV5640 原始帧采集与电脑标定工具；
-- `calibration.ini` 的SoC加载和定点变换实现；
+- OV5640真实标定图片和实测 `calibration.ini`；
 - ESP32→FPGA UART RX、动作完成应答和可靠坐标回传；
 - 另一端软件行程边界和独立急停命令；
 - Z/Y耦合的实测补偿；
@@ -397,3 +427,6 @@ visionarm-block --color red \
 
 这些缺项完成以前，当前程序应视为“识别与XY对准原型”，不是无人值守的
 完整自动抓取系统。
+
+所有必须依赖真实装置完成的项目见
+[闭环演示硬件待确认清单](闭环演示硬件待确认清单.md)。

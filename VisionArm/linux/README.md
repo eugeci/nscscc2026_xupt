@@ -7,6 +7,7 @@
 - `tools/lcdctl`：LCD 控制和 DDR 静态图显示。
 - `snake/snake.c`：贪吃蛇源码。
 - `visionarm-block/`：颜色候选、XNPU 积木分类与安全 XY 对准程序。
+- `visionarm-capture/`：稳定保存OV5640 DDR RGB565帧及寄存器元数据。
 - `assets/naruto_800x480.rgb565`：800x480 RGB565 LCD 测试图。
 
 ## 当前已验证命令
