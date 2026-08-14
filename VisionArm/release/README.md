@@ -10,9 +10,17 @@
 
 ## 使用顺序
 
-1. 整体演示使用 Vivado Hardware Manager 下载 `visionarm_npu_soc_top.bit`。
-2. 将 `vmlinux_visionarm_lcd` 放到 Windows TFTP 根目录。
-3. PMON 执行：
+Flash 已烧录 PMON 后，在 Linux 主机上执行：
+
+```sh
+cd VisionArm
+sudo -E ./scripts/boot_linux.py --interface enp3s0 --serial /dev/ttyUSB0
+```
+
+脚本会自动配置网口、启动 TFTP、下载 bitstream、执行 PMON 命令并等待 Linux
+shell。将网卡和串口名称替换为实际设备，完整说明见 `scripts/README.md`。
+
+使用 Windows TFTP 或需要手工排障时，等价的 PMON 命令为：
 
 ```text
 ifconfig dmfe0 192.168.1.101

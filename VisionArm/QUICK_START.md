@@ -5,9 +5,19 @@
 `release/` 中已经提供：
 
 - `visionarm_soc_top.bit`
+- `visionarm_npu_soc_top.bit`（NPU 与机械臂/摄像头/LCD 综合演示）
 - `vmlinux_visionarm_lcd`
 
-不需要重新综合时可直接使用这两个文件。
+不需要重新综合时，综合演示请使用 `visionarm_npu_soc_top.bit` 和 Linux 内核。
+
+Flash 已烧录 PMON 后，可在 Linux 主机上一条命令完成 bitstream 下载、TFTP
+服务、PMON 命令和 Linux 启动：
+
+```sh
+sudo -E ./scripts/boot_linux.py --interface enp3s0 --serial /dev/ttyUSB0
+```
+
+将网卡和串口名称替换为实际设备，完整说明见 `scripts/README.md`。
 
 ## 1. FPGA 工程
 
