@@ -3,12 +3,14 @@
 | 文件 | 用途 |
 |---|---|
 | `visionarm_soc_top.bit` | 最后下板验证的 FPGA 比特流 |
+| `visionarm_npu_soc_top.bit` | VisionArm 外设与 NPU 合并后的演示比特流（CPU 40 MHz、NPU 32.94 MHz） |
 | `vmlinux_visionarm_lcd` | 集成 VisionArm 工具和 LCD 的 Linux 内核 |
-| `SHA256SUMS.txt` | 两个文件的 SHA-256 校验值 |
+| `visionarm_npu_build_summary.md` | 合并比特流的综合、布局布线和时序摘要 |
+| `SHA256SUMS.txt` | 发布文件的 SHA-256 校验值 |
 
 ## 使用顺序
 
-1. Vivado Hardware Manager 下载 `visionarm_soc_top.bit`。
+1. 整体演示使用 Vivado Hardware Manager 下载 `visionarm_npu_soc_top.bit`。
 2. 将 `vmlinux_visionarm_lcd` 放到 Windows TFTP 根目录。
 3. PMON 执行：
 
@@ -22,5 +24,6 @@ Windows 校验示例：
 
 ```powershell
 Get-FileHash .\visionarm_soc_top.bit -Algorithm SHA256
+Get-FileHash .\visionarm_npu_soc_top.bit -Algorithm SHA256
 Get-FileHash .\vmlinux_visionarm_lcd -Algorithm SHA256
 ```
