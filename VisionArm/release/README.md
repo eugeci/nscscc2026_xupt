@@ -3,7 +3,7 @@
 | 文件 | 用途 |
 |---|---|
 | `visionarm_soc_top.bit` | 最后下板验证的 FPGA 比特流 |
-| `visionarm_npu_soc_top.bit` | VisionArm 外设与 NPU 合并后的演示比特流（CPU 40 MHz、NPU 32.94 MHz） |
+| `visionarm_npu_soc_top.bit` | VisionArm 外设与 NPU 合并后的演示比特流（CPU 40 MHz、NPU 33.14 MHz、VGA 50.43 MHz） |
 | `vmlinux_visionarm_lcd` | 集成 VisionArm 工具和 LCD 的 Linux 内核 |
 | `visionarm_npu_build_summary.md` | 合并比特流的综合、布局布线和时序摘要 |
 | `SHA256SUMS.txt` | 发布文件的 SHA-256 校验值 |
