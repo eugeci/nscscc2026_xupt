@@ -42,6 +42,7 @@ arm y up 200
 arm z forward 200
 arm grip open
 arm grip close
+arm home
 lcdctl status
 lcdctl show
 snake
@@ -61,16 +62,17 @@ xnpu-run --expect-checksum 0x685184b3 --expect-bbox 58,132,81,104,137 /models/fa
 
 ## 3. 机械臂 UART
 
-- FPGA TX → ESP32 GPIO16（RX）
-- FPGA RX ← ESP32 GPIO17（TX，可选）
+- FPGA TX → ESP32 GPIO17（UART2 RX）
+- FPGA RX ← ESP32 GPIO4（UART2 TX；当前 FPGA 尚未实现接收）
 - FPGA GND ↔ ESP32 GND
-- 串口参数：115200、8N1
+- 串口参数：9600、8N1、无流控
 
 ESP32 文件位于 `VisionArm/esp32/filesystem/`。
 
 ## 4. 详细资料
 
 - `docs/视觉机械臂使用手册.md`
+- `docs/XNPU积木识别闭环演示与标定指南.md`
 - `docs/寄存器映射.md`
 - `docs/时钟说明.md`
 - `docs/更新记录.md`

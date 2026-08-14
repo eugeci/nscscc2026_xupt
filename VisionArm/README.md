@@ -32,12 +32,15 @@ chiplab/fpga/loongson/2023.2/system_run.xpr
 ## 目录
 
 ```text
-docs/      使用手册、时钟和寄存器说明
+docs/      使用手册、闭环演示与标定指南、时钟和寄存器说明
 esp32/     ESP32 MicroPython 文件
 linux/     arm、cam、lcdctl、贪吃蛇和 LCD 图片资源
 ```
 
 常用命令和接线说明见 [QUICK_START.md](QUICK_START.md)。
+
+积木识别闭环的架构、回零、OV5640标定、图像—机械臂标定和验收流程见
+[XNPU积木识别闭环演示与标定指南](docs/XNPU积木识别闭环演示与标定指南.md)。
 
 已验证的比特流与 Linux 内核位于 [`release/`](release/) 目录，可直接用于下板演示。
 
