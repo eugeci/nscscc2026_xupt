@@ -7,9 +7,9 @@ index 9bbb725ae098..604d767b6a5c 100644
  extern void __init memblock_remove_mem(void);
  extern char __dtb_start[];
 -#ifdef CONFIG_LS_SOC
-+#if defined(CONFIG_LS_SOC) && defined(CONFIG_XUPT_NPU)
-+extern u32 __dtb_loongson32_xupt_npu_begin[];
-+static u32 *__dtb_begin = __dtb_loongson32_xupt_npu_begin;
++#if defined(CONFIG_LS_SOC) && defined(CONFIG_XNPU)
++extern u32 __dtb_loongson32_xnpu_begin[];
++static u32 *__dtb_begin = __dtb_loongson32_xnpu_begin;
 +#elif defined(CONFIG_LS_SOC)
  extern u32 __dtb_loongson32_ls_begin[];
  static u32 *__dtb_begin = __dtb_loongson32_ls_begin;

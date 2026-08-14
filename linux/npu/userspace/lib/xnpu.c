@@ -188,11 +188,11 @@ static int validate_header(struct xnpu_package *package)
 	if (info->hardware_abi != XNPU_PACKAGE_HARDWARE_ABI ||
 	    (info->task != XNPU_TASK_BBOX &&
 	     info->task != XNPU_TASK_CLASSIFICATION) ||
-	    info->input_mode > XUPT_NPU_INPUT_PACKED_PRELOAD ||
-	    info->input.layout > XUPT_NPU_LAYOUT_NCHW ||
-	    info->output.layout > XUPT_NPU_LAYOUT_NCHW ||
-	    info->input.dtype > XUPT_NPU_DTYPE_S32 ||
-	    info->output.dtype > XUPT_NPU_DTYPE_S32 ||
+	    info->input_mode > XNPU_INPUT_PACKED_PRELOAD ||
+	    info->input.layout > XNPU_LAYOUT_NCHW ||
+	    info->output.layout > XNPU_LAYOUT_NCHW ||
+	    info->input.dtype > XNPU_DTYPE_S32 ||
+	    info->output.dtype > XNPU_DTYPE_S32 ||
 	    !info->layer_count || !info->input.bytes || !info->output.bytes)
 		return -EPROTO;
 	return 0;
@@ -380,18 +380,18 @@ int xnpu_device_open(struct xnpu_device *device, const char *path)
 	if (!device)
 		return -EINVAL;
 	memset(device, 0, sizeof(*device));
-	device->fd = open(path ? path : "/dev/xupt-npu", O_RDWR);
+	device->fd = open(path ? path : "/dev/xnpu", O_RDWR);
 	if (device->fd < 0)
 		return -errno;
-	if (ioctl(device->fd, XUPT_NPU_IOC_GET_INFO, &device->info) < 0 ||
-	    ioctl(device->fd, XUPT_NPU_IOC_QUERY_CAPS, &device->caps) < 0) {
+	if (ioctl(device->fd, XNPU_IOC_GET_INFO, &device->info) < 0 ||
+	    ioctl(device->fd, XNPU_IOC_QUERY_CAPS, &device->caps) < 0) {
 		int result = -errno;
 
 		xnpu_device_close(device);
 		return result;
 	}
-	if (device->info.abi_version != XUPT_NPU_ABI_VERSION ||
-	    device->caps.abi_version != XUPT_NPU_ABI_VERSION) {
+	if (device->info.abi_version != XNPU_ABI_VERSION ||
+	    device->caps.abi_version != XNPU_ABI_VERSION) {
 		xnpu_device_close(device);
 		return -EPROTONOSUPPORT;
 	}
@@ -413,7 +413,7 @@ int xnpu_device_load_model(struct xnpu_device *device,
 {
 	const struct xnpu_section *descriptors;
 	const struct xnpu_section *parameters;
-	struct xupt_npu_model model;
+	struct xnpu_model model;
 
 	if (!device || device->fd < 0 || !package)
 		return -EINVAL;
@@ -444,7 +444,7 @@ int xnpu_device_load_model(struct xnpu_device *device,
 	model.result_dtype = package->info.output.dtype;
 	model.descriptors = (uint64_t)(uintptr_t)descriptors->data;
 	model.parameters = (uint64_t)(uintptr_t)parameters->data;
-	if (ioctl(device->fd, XUPT_NPU_IOC_LOAD_MODEL, &model) < 0)
+	if (ioctl(device->fd, XNPU_IOC_LOAD_MODEL, &model) < 0)
 		return -errno;
 	return 0;
 }
@@ -454,11 +454,11 @@ int xnpu_device_infer(struct xnpu_device *device,
 		      const void *input, size_t input_size,
 		      uint32_t timeout_ms, int use_irq,
 		      void *output, size_t output_capacity,
-		      struct xupt_npu_result_v2 *result)
+		      struct xnpu_result_v2 *result)
 {
-	struct xupt_npu_result_v2 local_result;
-	struct xupt_npu_input input_request;
-	struct xupt_npu_run run;
+	struct xnpu_result_v2 local_result;
+	struct xnpu_input input_request;
+	struct xnpu_run run;
 	size_t received = 0;
 
 	if (!device || device->fd < 0 || !package || !input || !output ||
@@ -469,16 +469,16 @@ int xnpu_device_infer(struct xnpu_device *device,
 	input_request.mode = package->info.input_mode;
 	input_request.bytes = package->info.input.bytes;
 	input_request.data = (uint64_t)(uintptr_t)input;
-	if (ioctl(device->fd, XUPT_NPU_IOC_LOAD_INPUT, &input_request) < 0)
+	if (ioctl(device->fd, XNPU_IOC_LOAD_INPUT, &input_request) < 0)
 		return -errno;
 	memset(&run, 0, sizeof(run));
 	if (use_irq && device->info.has_irq)
-		run.flags = XUPT_NPU_RUN_USE_IRQ;
-	if (ioctl(device->fd, XUPT_NPU_IOC_RUN, &run) < 0)
+		run.flags = XNPU_RUN_USE_IRQ;
+	if (ioctl(device->fd, XNPU_IOC_RUN, &run) < 0)
 		return -errno;
 	memset(&local_result, 0, sizeof(local_result));
 	local_result.timeout_ms = timeout_ms;
-	if (ioctl(device->fd, XUPT_NPU_IOC_WAIT_V2, &local_result) < 0)
+	if (ioctl(device->fd, XNPU_IOC_WAIT_V2, &local_result) < 0)
 		return -errno;
 	if (local_result.result_bytes != package->info.output.bytes ||
 	    local_result.result_width != package->info.output.width ||

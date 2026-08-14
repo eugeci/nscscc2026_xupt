@@ -2,8 +2,8 @@
 /dts-v1/;
 
 / {
-	model = "XUPT VisionArm SoC with NPU";
-	compatible = "xupt,visionarm-npu", "xupt,chiplab-npu", "loongson,loongson3";
+	model = "Chiplab SoC with XNPU";
+	compatible = "chiplab,xnpu", "loongson,loongson3";
 	#address-cells = <1>;
 	#size-cells = <1>;
 
@@ -13,12 +13,13 @@
 
 	chosen {
 		stdout-path = "serial0:115200n8";
-		bootargs = "quiet loglevel=3 console=ttyS0,115200 rdinit=/init";
+		bootargs = "console=ttyS0,115200 rdinit=/init";
 	};
 
 	memory {
 		device_type = "memory";
-		reg = <0x00000000 0x08000000>;
+		/* 16 MiB keeps cycle-accurate RTL boot validation practical. */
+		reg = <0x00000000 0x01000000>;
 	};
 
 	cpuic: interrupt-controller {
@@ -32,14 +33,14 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 		ranges = <0x10000000 0x10000000 0x10000000>;
+		/* The NPU RAM master observes the same 32-bit physical addresses. */
 		dma-ranges;
 
 		npu: accelerator@1f100000 {
-			compatible = "xupt,npu-v1";
+			compatible = "xnpu";
 			reg = <0x1f100000 0x00010000>;
 			interrupt-parent = <&cpuic>;
-			/* FPGA intrpt[5] maps to LoongArch CPU HWIRQ 7. */
-			interrupts = <7>;
+			interrupts = <2>;
 		};
 
 		cpu_uart0: serial@1fe001e0 {

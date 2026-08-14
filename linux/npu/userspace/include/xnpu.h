@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <linux/xupt_npu.h>
+#include <linux/xnpu.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -70,8 +70,8 @@ struct xnpu_package {
 
 struct xnpu_device {
 	int fd;
-	struct xupt_npu_info info;
-	struct xupt_npu_caps caps;
+	struct xnpu_info info;
+	struct xnpu_caps caps;
 };
 
 int xnpu_package_init(struct xnpu_package *package,
@@ -92,7 +92,7 @@ int xnpu_device_infer(struct xnpu_device *device,
 		      const void *input, size_t input_size,
 		      uint32_t timeout_ms, int use_irq,
 		      void *output, size_t output_capacity,
-		      struct xupt_npu_result_v2 *result);
+		      struct xnpu_result_v2 *result);
 
 int xnpu_read_file(const char *path, uint8_t **data, size_t *size);
 uint32_t xnpu_top1_u8(const uint8_t *scores, size_t count);

@@ -32,18 +32,21 @@ for patch_file in "$script_dir"/patches/*.patch; do
 done
 
 install -D -m 0644 \
-	"$script_dir/kernel/drivers/misc/xupt_npu.c" \
-	"$kernel_dir/drivers/misc/xupt_npu.c"
+	"$script_dir/kernel/drivers/misc/xnpu.c" \
+	"$kernel_dir/drivers/misc/xnpu.c"
 install -D -m 0644 \
-	"$script_dir/kernel/include/uapi/linux/xupt_npu.h" \
-	"$kernel_dir/include/uapi/linux/xupt_npu.h"
+	"$script_dir/kernel/include/uapi/linux/xnpu.h" \
+	"$kernel_dir/include/uapi/linux/xnpu.h"
+install -D -m 0644 \
+	"$script_dir/kernel/arch/loongarch/loongson32/irq.c" \
+	"$kernel_dir/arch/loongarch/loongson32/irq.c"
 
-dts_source="$script_dir/kernel/arch/loongarch/boot/dts/loongson/loongson32_xupt_npu.dts"
+dts_source="$script_dir/kernel/arch/loongarch/boot/dts/loongson/loongson32_xnpu.dts"
 if [ "${NPU_INIT:-stage3}" = demo ]; then
-	dts_source="$script_dir/kernel/arch/loongarch/boot/dts/loongson/loongson32_xupt_visionarm_npu.dts"
+	dts_source="$script_dir/kernel/arch/loongarch/boot/dts/loongson/loongson32_visionarm_xnpu.dts"
 fi
 install -D -m 0644 \
 	"$dts_source" \
-	"$kernel_dir/arch/loongarch/boot/dts/loongson/loongson32_xupt_npu.dts"
+	"$kernel_dir/arch/loongarch/boot/dts/loongson/loongson32_xnpu.dts"
 
 echo "$kernel_dir"

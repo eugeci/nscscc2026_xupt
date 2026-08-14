@@ -125,9 +125,9 @@ make -C "$kernel_dir" O="$build_dir" ARCH=loongarch \
 	CROSS_COMPILE="$cross_compile" la32_defconfig
 
 "$kernel_dir/scripts/config" --file "$build_dir/.config" \
-	-e XUPT_NPU \
+	-e XNPU \
 	-e BUILTIN_DTB \
-	--set-str BUILTIN_DTB_NAME loongson32_xupt_npu \
+	--set-str BUILTIN_DTB_NAME loongson32_xnpu \
 	-e BLK_DEV_INITRD \
 	--set-str INITRAMFS_SOURCE "$initramfs_source" \
 	-e DEVTMPFS \

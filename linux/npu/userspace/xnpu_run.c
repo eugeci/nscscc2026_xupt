@@ -11,7 +11,7 @@ static void usage(FILE *stream)
 {
 	fprintf(stream,
 		"usage: xnpu-run [OPTIONS] MODEL.xnpu INPUT.bin\n"
-		"  -d, --device PATH          NPU device (default /dev/xupt-npu)\n"
+		"  -d, --device PATH          NPU device (default /dev/xnpu)\n"
 		"  -t, --timeout-ms N         timeout (default 30000)\n"
 		"      --poll                 do not request IRQ completion\n"
 		"      --expect-checksum HEX  require result checksum\n"
@@ -61,8 +61,8 @@ int main(int argc, char **argv)
 		{ "help", no_argument, NULL, 'h' },
 		{ NULL, 0, NULL, 0 },
 	};
-	const char *device_path = "/dev/xupt-npu";
-	struct xupt_npu_result_v2 inference;
+	const char *device_path = "/dev/xnpu";
+	struct xnpu_result_v2 inference;
 	struct xnpu_package package;
 	struct xnpu_device device = { .fd = -1 };
 	uint8_t expected_bbox[5] = { 0 };
@@ -158,7 +158,7 @@ int main(int argc, char **argv)
 		printf("bbox=%u,%u,%u,%u,%u\n", output[0], output[1], output[2],
 		       output[3], output[4]);
 	if (package.info.task == XNPU_TASK_CLASSIFICATION &&
-	    package.info.output.dtype == XUPT_NPU_DTYPE_U8)
+	    package.info.output.dtype == XNPU_DTYPE_U8)
 		printf("top1=%u\n",
 		       xnpu_top1_u8(output, package.info.output.bytes));
 	if ((have_checksum && inference.result_checksum != expected_checksum) ||

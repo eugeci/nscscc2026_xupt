@@ -9,7 +9,7 @@
 #include <sys/mount.h>
 #include <unistd.h>
 
-#include <linux/xupt_npu.h>
+#include <linux/xnpu.h>
 #include "npu_golden_input.h"
 
 #define FACENET_NUM_LAYERS 10U
@@ -18,7 +18,7 @@
 #define FACENET_RESULT_BYTES 16U
 #define FACENET_RESULT_CHECKSUM 0x685184b3U
 
-static const uint32_t facenet_descriptors[FACENET_NUM_LAYERS][XUPT_NPU_DESC_WORDS] = {
+static const uint32_t facenet_descriptors[FACENET_NUM_LAYERS][XNPU_DESC_WORDS] = {
 	{ 0x00103322, 0x00122001, 0x00080001, 0x007800a0,
 	  0x003c0050, 0x00000000, 0x00000240, 0x00000008 },
 	{ 0x00103322, 0x00122001, 0x00100008, 0x003c0050,
@@ -41,16 +41,16 @@ static const uint32_t facenet_descriptors[FACENET_NUM_LAYERS][XUPT_NPU_DESC_WORD
 	  0x00010001, 0x00005159, 0x00005259, 0x00000004 },
 };
 
-static uint8_t test_frame[XUPT_NPU_FRAME_BYTES];
+static uint8_t test_frame[XNPU_FRAME_BYTES];
 
 static void fill_test_frame(void)
 {
 	uint32_t x;
 	uint32_t y;
 
-	for (y = 0; y < XUPT_NPU_FRAME_HEIGHT; ++y) {
-		for (x = 0; x < XUPT_NPU_FRAME_WIDTH; ++x) {
-			uint32_t index = y * XUPT_NPU_FRAME_WIDTH + x;
+	for (y = 0; y < XNPU_FRAME_HEIGHT; ++y) {
+		for (x = 0; x < XNPU_FRAME_WIDTH; ++x) {
+			uint32_t index = y * XNPU_FRAME_WIDTH + x;
 
 			test_frame[index] =
 				(uint8_t)((x * 3U + y * 5U + (x ^ y)) & 0xffU);
@@ -121,20 +121,20 @@ static uint8_t *load_parameter_hex(void)
 	return parameters;
 }
 
-static void run_legacy_smoke(int fd, const struct xupt_npu_info *info)
+static void run_legacy_smoke(int fd, const struct xnpu_info *info)
 {
-	struct xupt_npu_descriptors descriptors;
-	struct xupt_npu_result result;
-	struct xupt_npu_run run;
+	struct xnpu_descriptors descriptors;
+	struct xnpu_result result;
+	struct xnpu_run run;
 	ssize_t written;
 
-	if (ioctl(fd, XUPT_NPU_IOC_RESET) < 0)
+	if (ioctl(fd, XNPU_IOC_RESET) < 0)
 		fail("reset");
 
 	descriptors.count = FACENET_NUM_LAYERS;
 	descriptors.reserved = 0;
 	descriptors.data = (uint64_t)(uintptr_t)facenet_descriptors;
-	if (ioctl(fd, XUPT_NPU_IOC_LOAD_DESCRIPTORS, &descriptors) < 0)
+	if (ioctl(fd, XNPU_IOC_LOAD_DESCRIPTORS, &descriptors) < 0)
 		fail("load_descriptors");
 
 	fill_test_frame();
@@ -145,14 +145,14 @@ static void run_legacy_smoke(int fd, const struct xupt_npu_info *info)
 		fail("write_frame");
 	}
 
-	run.flags = info->has_irq ? XUPT_NPU_RUN_USE_IRQ : 0;
+	run.flags = info->has_irq ? XNPU_RUN_USE_IRQ : 0;
 	run.reserved = 0;
-	if (ioctl(fd, XUPT_NPU_IOC_RUN, &run) < 0)
+	if (ioctl(fd, XNPU_IOC_RUN, &run) < 0)
 		fail("run");
 
 	memset(&result, 0, sizeof(result));
 	result.timeout_ms = 30000;
-	if (ioctl(fd, XUPT_NPU_IOC_WAIT, &result) < 0)
+	if (ioctl(fd, XNPU_IOC_WAIT, &result) < 0)
 		fail("wait");
 
 	printf("status=0x%08x bbox_valid=%u frame_id=%u "
@@ -167,12 +167,12 @@ static void run_legacy_smoke(int fd, const struct xupt_npu_info *info)
 	}
 }
 
-static void run_dma_smoke(int fd, const struct xupt_npu_info *info)
+static void run_dma_smoke(int fd, const struct xnpu_info *info)
 {
-	struct xupt_npu_result_v2 result;
-	struct xupt_npu_model model;
-	struct xupt_npu_input input;
-	struct xupt_npu_run run;
+	struct xnpu_result_v2 result;
+	struct xnpu_model model;
+	struct xnpu_input input;
+	struct xnpu_run run;
 	uint8_t output[FACENET_RESULT_BYTES];
 	uint8_t *parameters;
 	size_t received = 0;
@@ -183,38 +183,38 @@ static void run_dma_smoke(int fd, const struct xupt_npu_info *info)
 
 	memset(&model, 0, sizeof(model));
 	model.layer_count = FACENET_NUM_LAYERS;
-	model.input_mode = XUPT_NPU_INPUT_FRAME;
-	model.input_bytes = XUPT_NPU_FRAME_BYTES;
+	model.input_mode = XNPU_INPUT_FRAME;
+	model.input_bytes = XNPU_FRAME_BYTES;
 	model.parameter_bytes = FACENET_PARAMETER_BYTES;
-	model.scratch_bytes = XUPT_NPU_MAX_SCRATCH_BYTES;
+	model.scratch_bytes = XNPU_MAX_SCRATCH_BYTES;
 	model.result_bytes = FACENET_RESULT_BYTES;
 	model.result_width = 1;
 	model.result_height = 1;
 	model.result_channels = 5;
-	model.result_layout = XUPT_NPU_LAYOUT_LINEAR;
-	model.result_dtype = XUPT_NPU_DTYPE_U8;
+	model.result_layout = XNPU_LAYOUT_LINEAR;
+	model.result_dtype = XNPU_DTYPE_U8;
 	model.descriptors =
 		(uint64_t)(uintptr_t)facenet_descriptors;
 	model.parameters = (uint64_t)(uintptr_t)parameters;
-	if (ioctl(fd, XUPT_NPU_IOC_LOAD_MODEL, &model) < 0)
+	if (ioctl(fd, XNPU_IOC_LOAD_MODEL, &model) < 0)
 		fail("load_model");
 	free(parameters);
 
 	memset(&input, 0, sizeof(input));
-	input.mode = XUPT_NPU_INPUT_FRAME;
-	input.bytes = XUPT_NPU_FRAME_BYTES;
+	input.mode = XNPU_INPUT_FRAME;
+	input.bytes = XNPU_FRAME_BYTES;
 	input.data = (uint64_t)(uintptr_t)npu_golden_frame;
-	if (ioctl(fd, XUPT_NPU_IOC_LOAD_INPUT, &input) < 0)
+	if (ioctl(fd, XNPU_IOC_LOAD_INPUT, &input) < 0)
 		fail("load_input");
 
-	run.flags = info->has_irq ? XUPT_NPU_RUN_USE_IRQ : 0;
+	run.flags = info->has_irq ? XNPU_RUN_USE_IRQ : 0;
 	run.reserved = 0;
-	if (ioctl(fd, XUPT_NPU_IOC_RUN, &run) < 0)
+	if (ioctl(fd, XNPU_IOC_RUN, &run) < 0)
 		fail("run_dma");
 
 	memset(&result, 0, sizeof(result));
 	result.timeout_ms = 30000;
-	if (ioctl(fd, XUPT_NPU_IOC_WAIT_V2, &result) < 0)
+	if (ioctl(fd, XNPU_IOC_WAIT_V2, &result) < 0)
 		fail("wait_dma");
 
 	while (received < sizeof(output)) {
@@ -249,8 +249,8 @@ static void run_dma_smoke(int fd, const struct xupt_npu_info *info)
 
 int main(void)
 {
-	struct xupt_npu_caps caps;
-	struct xupt_npu_info info;
+	struct xnpu_caps caps;
+	struct xnpu_info info;
 	int fd;
 
 	setvbuf(stdout, NULL, _IONBF, 0);
@@ -260,13 +260,13 @@ int main(void)
 	    errno != EBUSY)
 		fail("mount_devtmpfs");
 
-	fd = open("/dev/xupt-npu", O_RDWR);
+	fd = open("/dev/xnpu", O_RDWR);
 	if (fd < 0)
 		fail("open");
 
-	if (ioctl(fd, XUPT_NPU_IOC_GET_INFO, &info) < 0)
+	if (ioctl(fd, XNPU_IOC_GET_INFO, &info) < 0)
 		fail("get_info");
-	if (ioctl(fd, XUPT_NPU_IOC_QUERY_CAPS, &caps) < 0)
+	if (ioctl(fd, XNPU_IOC_QUERY_CAPS, &caps) < 0)
 		fail("query_caps");
 
 	printf("npu abi=%u hw_abi=%u caps=0x%08x frame=%ux%u bytes=%u "
@@ -275,14 +275,14 @@ int main(void)
 	       info.frame_width, info.frame_height, info.frame_bytes,
 	       info.max_layers, info.has_irq);
 
-	if (info.abi_version != XUPT_NPU_ABI_VERSION ||
-	    caps.abi_version != XUPT_NPU_ABI_VERSION ||
-	    info.frame_bytes != XUPT_NPU_FRAME_BYTES) {
+	if (info.abi_version != XNPU_ABI_VERSION ||
+	    caps.abi_version != XNPU_ABI_VERSION ||
+	    info.frame_bytes != XNPU_FRAME_BYTES) {
 		errno = EPROTO;
 		fail("abi_check");
 	}
 
-	if (caps.capabilities & XUPT_NPU_CAP_AXI_DMA)
+	if (caps.capabilities & XNPU_CAP_AXI_DMA)
 		run_dma_smoke(fd, &info);
 	else
 		run_legacy_smoke(fd, &info);

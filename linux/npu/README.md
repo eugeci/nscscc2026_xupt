@@ -1,4 +1,4 @@
-# XUPT NPU Linux integration
+# XNPU Linux integration
 
 This directory contains a reproducible Linux 5.14 integration for the NPU in
 the Chiplab SoC.  It targets the official `la32r-Linux` `la32r-new-world`
@@ -6,8 +6,8 @@ baseline at commit `4ed7b98e08e8d9628f8d39a21ca8bbdd29ad8d1e`.
 
 The integration provides:
 
-- a device-tree node at physical address `0x1f100000`, CPU HWIRQ 2;
-- a platform/misc driver exposed as `/dev/xupt-npu`;
+- a device-tree node at physical address `0x1f100000`, CPU HWIRQ 7;
+- a platform/misc driver exposed as `/dev/xnpu`;
 - ABI-v1 compatibility for the fixed ROM/MMIO FaceNet path;
 - ABI v2 for capability discovery, one active DMA model, generic input and
   result tensors;
@@ -155,11 +155,11 @@ configuration instead of the reduced cycle-accurate simulation config.
 
 ABI v2 uses this lifecycle:
 
-1. `XUPT_NPU_IOC_QUERY_CAPS`
-2. `XUPT_NPU_IOC_LOAD_MODEL`
-3. `XUPT_NPU_IOC_LOAD_INPUT`
-4. `XUPT_NPU_IOC_RUN`
-5. `XUPT_NPU_IOC_WAIT_V2`
+1. `XNPU_IOC_QUERY_CAPS`
+2. `XNPU_IOC_LOAD_MODEL`
+3. `XNPU_IOC_LOAD_INPUT`
+4. `XNPU_IOC_RUN`
+5. `XNPU_IOC_WAIT_V2`
 6. `read()` the generic result payload
 
 `LOAD_MODEL` atomically copies model metadata, `layer_count * 8` descriptor

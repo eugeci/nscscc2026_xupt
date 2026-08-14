@@ -7,8 +7,10 @@
 - `visionarm_soc_top.bit`
 - `visionarm_npu_soc_top.bit`（NPU 与机械臂/摄像头/LCD 综合演示）
 - `vmlinux_visionarm_lcd`
+- `vmlinux_visionarm_xnpu`（机械臂/摄像头/LCD 与 XNPU 驱动综合内核）
 
-不需要重新综合时，综合演示请使用 `visionarm_npu_soc_top.bit` 和 Linux 内核。
+不需要重新综合时，综合演示请使用 `visionarm_npu_soc_top.bit` 和
+`vmlinux_visionarm_xnpu`。
 
 Flash 已烧录 PMON 后，可在 Linux 主机上一条命令完成 bitstream 下载、TFTP
 服务、PMON 命令和 Linux 启动：
@@ -43,6 +45,16 @@ arm grip close
 lcdctl status
 lcdctl show
 snake
+```
+
+XNPU 驱动与推理测试：
+
+```sh
+ls -l /dev/xnpu
+dmesg | grep -i xnpu
+xnpu-inspect /models/facenet_lbp_v1.xnpu
+xnpu-run --poll --expect-checksum 0x685184b3 --expect-bbox 58,132,81,104,137 /models/facenet_lbp_v1.xnpu /fixtures/facenet_seed42.bin
+xnpu-run --expect-checksum 0x685184b3 --expect-bbox 58,132,81,104,137 /models/facenet_lbp_v1.xnpu /fixtures/facenet_seed42.bin
 ```
 
 建议先显示 LCD 静态图，再启动摄像头。摄像头运行后重新显示 LCD 静态图，可能因 DDR 读通道争用出现叠图。

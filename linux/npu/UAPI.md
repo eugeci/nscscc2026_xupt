@@ -1,7 +1,7 @@
-# XUPT-NPU Linux UAPI v2
+# XNPU Linux UAPI v2
 
 The public definitions are in
-`kernel/include/uapi/linux/xupt_npu.h`.  Every structure uses fixed-width
+`kernel/include/uapi/linux/xnpu.h`.  Every structure uses fixed-width
 integer fields and explicit `__u64` userspace pointers, so the layout is stable
 for the 32-bit LoongArch target.
 
@@ -20,13 +20,13 @@ WAIT
 
 They remain the ROM/MMIO regression interface.  `GET_INFO.abi_version` now
 returns 2.  New software must call `QUERY_CAPS` and check
-`XUPT_NPU_CAP_AXI_DMA` before using the model operations.  A ROM build reports
+`XNPU_CAP_AXI_DMA` before using the model operations.  A ROM build reports
 no DMA capability and returns `-EOPNOTSUPP` for v2 model ioctls.
 
 ## Single-active-model lifecycle
 
 ```text
-open("/dev/xupt-npu", O_RDWR)
+open("/dev/xnpu", O_RDWR)
 QUERY_CAPS
 LOAD_MODEL
 LOAD_INPUT
@@ -53,7 +53,7 @@ active model; userspace must issue `RESET` or retry `LOAD_MODEL`.
 
 ## Operations
 
-### `XUPT_NPU_IOC_QUERY_CAPS`
+### `XNPU_IOC_QUERY_CAPS`
 
 Returns ABI/hardware versions, capabilities and hard limits.  Reserved fields
 are zero.  Stage-3 limits are:
@@ -70,7 +70,7 @@ The current external pool reorder implementation addresses at most 307,200
 scratch bytes; v2 requires at least that much and accepts up to the reported
 512 KiB limit.
 
-### `XUPT_NPU_IOC_LOAD_MODEL`
+### `XNPU_IOC_LOAD_MODEL`
 
 The request supplies:
 
@@ -87,11 +87,11 @@ offsets must remain inside the supplied parameter image.
 
 The input modes are:
 
-- `XUPT_NPU_INPUT_FRAME`: exactly 19,200 bytes, used by FaceNet and the current
+- `XNPU_INPUT_FRAME`: exactly 19,200 bytes, used by FaceNet and the current
   padded LeNet contract;
-- `XUPT_NPU_INPUT_PACKED_PRELOAD`: 1..19,200 bytes, used by TinyVGG.
+- `XNPU_INPUT_PACKED_PRELOAD`: 1..19,200 bytes, used by TinyVGG.
 
-### `XUPT_NPU_IOC_LOAD_INPUT`
+### `XNPU_IOC_LOAD_INPUT`
 
 Copies exactly the byte count declared by the active model.  The mode must also
 match.  Frame input is written to the MMIO frame aperture; packed input is
@@ -99,14 +99,14 @@ written through the packed-preload FIFO.  A busy device returns `-EBUSY`.
 
 The legacy `write()` operation is still accepted for a frame-mode model.
 
-### `XUPT_NPU_IOC_RUN`
+### `XNPU_IOC_RUN`
 
 Starts the active model after an input has been loaded.  The optional
-`XUPT_NPU_RUN_USE_IRQ` flag selects interrupt completion; polling remains
+`XNPU_RUN_USE_IRQ` flag selects interrupt completion; polling remains
 available for bring-up.  The result DMA buffer and result status are cleared
 before each run.  A second concurrent run returns `-EBUSY`.
 
-### `XUPT_NPU_IOC_WAIT_V2` and `read()`
+### `XNPU_IOC_WAIT_V2` and `read()`
 
 `WAIT_V2` returns status, cycle count, result status, actual byte count,
 checksum and tensor metadata.  It succeeds only after both inference and result

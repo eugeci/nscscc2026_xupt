@@ -69,7 +69,7 @@ static int split_fields(char *line, char *fields[5])
 
 int main(int argc, char **argv)
 {
-	const char *device_path = "/dev/xupt-npu";
+	const char *device_path = "/dev/xnpu";
 	struct xnpu_device device;
 	char line[2048];
 	unsigned int count = 0;
@@ -98,7 +98,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	while (fgets(line, sizeof(line), manifest)) {
-		struct xupt_npu_result_v2 inference;
+		struct xnpu_result_v2 inference;
 		struct xnpu_package package;
 		char *fields[5];
 		uint8_t *input = NULL;

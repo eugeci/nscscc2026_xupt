@@ -27,8 +27,11 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 VISIONARM_DIR = SCRIPT_DIR.parent
 RELEASE_DIR = VISIONARM_DIR / "release"
 DEFAULT_BIT = RELEASE_DIR / "visionarm_npu_soc_top.bit"
-DEFAULT_KERNEL = RELEASE_DIR / "vmlinux_visionarm_lcd"
-DEFAULT_BOOTARGS = "console=ttyS0,115200 rdinit=/sbin/init mem=120M"
+DEFAULT_KERNEL = RELEASE_DIR / "vmlinux_visionarm_xnpu"
+DEFAULT_BOOTARGS = (
+    "console=ttyS0,115200 rdinit=/sbin/init mem=120M "
+    "initcall_debug=1 loglevel=20 ignore_loglevel"
+)
 SERIAL_CANDIDATES = ("/dev/ttyUSB*", "/dev/ttyACM*")
 
 
@@ -333,7 +336,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prefix", type=int, default=24)
     parser.add_argument("--bit", type=Path, default=DEFAULT_BIT)
     parser.add_argument("--kernel", type=Path, default=DEFAULT_KERNEL)
-    parser.add_argument("--tftp-name", default="vmlinux_visionarm_lcd")
+    parser.add_argument("--tftp-name", default="vmlinux_visionarm_xnpu")
     parser.add_argument("--bootargs", default=DEFAULT_BOOTARGS)
     parser.add_argument("--vivado", help="Vivado 可执行文件路径")
     parser.add_argument("--skip-program", action="store_true", help="不下载 bitstream")

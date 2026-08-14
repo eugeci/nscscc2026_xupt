@@ -1,4 +1,4 @@
-# XUPT-NPU 协处理器移植、Linux 多模型运行时与编译器路线
+# XNPU 协处理器移植、Linux 多模型运行时与编译器路线
 
 > 最后更新：2026-07-30
 > 项目定位：面向 LoongArch SoC 的轻量级、descriptor-driven、INT8 CNN
@@ -29,7 +29,7 @@
 - 在目标 SoC 上完成训练、校准和全功能模型编译；
 - 为追求“通用 NPU”名称而无验证地扩大算子集合。
 
-项目文档、答辩和界面可以继续使用 `XUPT-NPU` 或 `XNPU`，但对外完整名称应使用
+项目文档、答辩和界面统一使用 `XNPU`，对外完整名称可使用
 “轻量级可配置 INT8 CNN 推理协处理器”或
 “Lightweight Descriptor-Driven INT8 CNN Inference Coprocessor”。
 
@@ -52,7 +52,7 @@
 | --- | --- |
 | 物理 MMIO | `0x1f100000`--`0x1f10ffff` |
 | 裸机非缓存地址 | `0xbf100000` |
-| Linux 验证用 CPU HWIRQ | `2` |
+| Linux 验证用 CPU HWIRQ | `7` |
 | 帧输入区 | slave aperture `0x1000` 起 |
 | descriptor 区 | slave aperture `0x6000`--`0x63ff` |
 
@@ -60,7 +60,7 @@
 
 仓库已经包含可复现的 Linux 5.14 集成：
 
-- platform/misc driver：`/dev/xupt-npu`；
+- platform/misc driver：`/dev/xnpu`；
 - 设备树节点和 IRQ；
 - descriptor 装载、固定帧写入、启动、IRQ/轮询等待和 bbox 返回；
 - 内置 `npu_smoke` 的 initramfs；
@@ -156,7 +156,7 @@ header、fixture 和 manifest。近期应把它作为数值参考实现，而不
 Linux 用户态 libxnpu / xnpu-run / 展示程序
         |
         v
-    /dev/xupt-npu
+    /dev/xnpu
         |
         v
 Linux 驱动：descriptor + DMA parameter/scratch/result + IRQ

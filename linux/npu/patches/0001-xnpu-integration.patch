@@ -5,7 +5,7 @@ index d31d9512eb07..603c52fed282 100644
 @@ -1,4 +1,5 @@
  # SPDX-License-Identifier: GPL-2.0
  dtb-$(CONFIG_LS_SOC) += loongson32_ls.dtb
-+dtb-$(CONFIG_LS_SOC) += loongson32_xupt_npu.dtb
++dtb-$(CONFIG_LS_SOC) += loongson32_xnpu.dtb
  dtb-$(CONFIG_BX_SOC) += loongson32_bx.dtb
  obj-y				+= $(patsubst %.dtb, %.dtb.o, $(dtb-y))
 diff --git a/drivers/misc/Kconfig b/drivers/misc/Kconfig
@@ -16,12 +16,12 @@ index 0f5a49fc7c9e..4566f097c1f5 100644
  
  	  If unsure, say N.
  
-+config XUPT_NPU
-+	tristate "XUPT Chiplab neural-network accelerator"
++config XNPU
++	tristate "XNPU neural-network accelerator"
 +	depends on OF && HAS_IOMEM
 +	help
 +	  Enable the platform driver for the neural-network accelerator used
-+	  by the XUPT Chiplab SoC.  The driver exposes /dev/xupt-npu and
++	  by the VisionArm Chiplab SoC.  The driver exposes /dev/xnpu and
 +	  supports frame upload, programmable layer descriptors, interrupt
 +	  driven execution and bounding-box result retrieval.
 +
@@ -38,8 +38,7 @@ index a086197af544..c71a3303a9f5 100644
  obj-$(CONFIG_PCI_ENDPOINT_TEST)	+= pci_endpoint_test.o
  obj-$(CONFIG_OCXL)		+= ocxl/
  obj-$(CONFIG_BCM_VK)		+= bcm-vk/
-+obj-$(CONFIG_XUPT_NPU)		+= xupt_npu.o
++obj-$(CONFIG_XNPU)		+= xnpu.o
  obj-y				+= cardreader/
  obj-$(CONFIG_PVPANIC)   	+= pvpanic/
  obj-$(CONFIG_HABANA_AI)		+= habanalabs/
-

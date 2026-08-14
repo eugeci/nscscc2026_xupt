@@ -150,7 +150,7 @@ static void package_error_tests(void)
 }
 
 static void fill_model_request(const struct xnpu_package *package,
-			       struct xupt_npu_model *model,
+			       struct xnpu_model *model,
 			       const void *descriptors)
 {
 	const struct xnpu_section *parameters =
@@ -185,15 +185,15 @@ static void expect_ioctl_error(int fd, unsigned long request, void *argument,
 
 static void verify_model_boundary(struct xnpu_device *device)
 {
-	struct xupt_npu_run run;
+	struct xnpu_run run;
 	uint8_t byte;
 
 	errno = 0;
 	if (read(device->fd, &byte, sizeof(byte)) != -1 || errno != ENODATA)
 		fail("stale_result_after_model_load", errno ? -errno : -EIO);
 	memset(&run, 0, sizeof(run));
-	run.flags = XUPT_NPU_RUN_USE_IRQ;
-	expect_ioctl_error(device->fd, XUPT_NPU_IOC_RUN, &run, ENODATA,
+	run.flags = XNPU_RUN_USE_IRQ;
+	expect_ioctl_error(device->fd, XNPU_IOC_RUN, &run, ENODATA,
 			   "stale_input_after_model_load");
 	printf("XNPU_STAGE5_BOUNDARY_PASS stale_input=cleared "
 	       "stale_result=cleared\n");
@@ -213,7 +213,7 @@ static int run_fixture(struct xnpu_device *device,
 		       const struct xnpu_package *package,
 		       const struct fixture *fixture)
 {
-	struct xupt_npu_result_v2 inference;
+	struct xnpu_result_v2 inference;
 	uint8_t *input;
 	uint8_t *output;
 	size_t input_size;
@@ -293,7 +293,7 @@ static void invalid_model_tests(struct xnpu_device *device,
 {
 	const struct xnpu_section *descriptors =
 		xnpu_package_section(package, XNPU_SECTION_DESCRIPTORS);
-	struct xupt_npu_model model;
+	struct xnpu_model model;
 	uint32_t *bad_descriptors;
 
 	bad_descriptors = malloc(descriptors->size);
@@ -302,7 +302,7 @@ static void invalid_model_tests(struct xnpu_device *device,
 	memcpy(bad_descriptors, descriptors->data, descriptors->size);
 	bad_descriptors[5] = package->info.parameter_bytes / sizeof(uint32_t);
 	fill_model_request(package, &model, bad_descriptors);
-	expect_ioctl_error(device->fd, XUPT_NPU_IOC_LOAD_MODEL, &model, EINVAL,
+	expect_ioctl_error(device->fd, XNPU_IOC_LOAD_MODEL, &model, EINVAL,
 			   "bad_descriptor_not_rejected");
 	printf("XNPU_STAGE5_ERROR_PASS kind=bad_descriptor error=%d\n",
 	       EINVAL);
@@ -310,7 +310,7 @@ static void invalid_model_tests(struct xnpu_device *device,
 
 	fill_model_request(package, &model, descriptors->data);
 	model.scratch_bytes = device->caps.max_scratch_bytes + 16U;
-	expect_ioctl_error(device->fd, XUPT_NPU_IOC_LOAD_MODEL, &model, EINVAL,
+	expect_ioctl_error(device->fd, XNPU_IOC_LOAD_MODEL, &model, EINVAL,
 			   "oversize_model_not_rejected");
 	printf("XNPU_STAGE5_ERROR_PASS kind=oversize_model error=%d\n",
 	       EINVAL);
@@ -324,9 +324,9 @@ static void invalid_model_tests(struct xnpu_device *device,
 static void timeout_reset_recovery(struct xnpu_device *device,
 				   const struct xnpu_package *package)
 {
-	struct xupt_npu_result_v2 result;
-	struct xupt_npu_input input_request;
-	struct xupt_npu_run run;
+	struct xnpu_result_v2 result;
+	struct xnpu_input input_request;
+	struct xnpu_run run;
 	uint8_t *input;
 	size_t input_size;
 	int ioctl_result;
@@ -339,7 +339,7 @@ static void timeout_reset_recovery(struct xnpu_device *device,
 	input_request.mode = package->info.input_mode;
 	input_request.bytes = package->info.input.bytes;
 	input_request.data = (uint64_t)(uintptr_t)input;
-	if (ioctl(device->fd, XUPT_NPU_IOC_LOAD_INPUT, &input_request) < 0)
+	if (ioctl(device->fd, XNPU_IOC_LOAD_INPUT, &input_request) < 0)
 		fail("timeout_load_input", -errno);
 	memset(&run, 0, sizeof(run));
 	/*
@@ -348,19 +348,19 @@ static void timeout_reset_recovery(struct xnpu_device *device,
 	 * coarser than one millisecond.
 	 */
 	run.flags = 0;
-	if (ioctl(device->fd, XUPT_NPU_IOC_RUN, &run) < 0)
+	if (ioctl(device->fd, XNPU_IOC_RUN, &run) < 0)
 		fail("timeout_run", -errno);
 	memset(&result, 0, sizeof(result));
 	result.timeout_ms = 1;
 	errno = 0;
-	ioctl_result = ioctl(device->fd, XUPT_NPU_IOC_WAIT_V2, &result);
+	ioctl_result = ioctl(device->fd, XNPU_IOC_WAIT_V2, &result);
 	if (ioctl_result != -1 || errno != ETIMEDOUT)
 		fail("timeout_not_observed",
 		     ioctl_result == -1 ? -errno : -EIO);
 	printf("XNPU_STAGE5_ERROR_PASS kind=timeout error=%d\n", ETIMEDOUT);
-	if (ioctl(device->fd, XUPT_NPU_IOC_RESET) < 0)
+	if (ioctl(device->fd, XNPU_IOC_RESET) < 0)
 		fail("timeout_reset", -errno);
-	expect_ioctl_error(device->fd, XUPT_NPU_IOC_LOAD_INPUT,
+	expect_ioctl_error(device->fd, XNPU_IOC_LOAD_INPUT,
 			   &input_request, ENODATA,
 			   "reset_did_not_drop_model");
 	free(input);
@@ -384,7 +384,7 @@ int main(void)
 		fail("mount_devtmpfs", -errno);
 
 	package_error_tests();
-	result = xnpu_device_open(&device, "/dev/xupt-npu");
+	result = xnpu_device_open(&device, "/dev/xnpu");
 	if (result)
 		fail("device_open", result);
 	printf("driver_abi=%u hardware_abi=%u caps=0x%08x "

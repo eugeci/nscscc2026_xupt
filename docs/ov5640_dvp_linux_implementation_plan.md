@@ -129,7 +129,7 @@ i2c-ocores driver -> APB I²C master -> SCCB SIOC/SIOD -> OV5640
                        userspace capture/preprocess
                                       |
                                       v
-                              /dev/xupt-npu
+                              /dev/xnpu
 ```
 
 控制平面与数据平面必须分开：SCCB 只配置寄存器，不能承载像素；DVP 数据不能由 CPU
@@ -810,7 +810,7 @@ linux/
     kernel/
       arch/loongarch/boot/dts/loongson/loongson32_xupt_system.dts
   npu/
-    kernel/drivers/misc/xupt_npu.c
+    kernel/drivers/misc/xnpu.c
   camera/
     README.md
     build.sh

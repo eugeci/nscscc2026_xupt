@@ -16,7 +16,7 @@
 - 串口没有被 minicom、SecureCRT 等其他程序占用；
 - Vivado 2023.2 可用；
 - 发布目录中存在 `visionarm_npu_soc_top.bit` 和
-  `vmlinux_visionarm_lcd`。
+  `vmlinux_visionarm_xnpu`。
 
 查看主机直连网卡和串口名称：
 
@@ -40,8 +40,8 @@ sudo -E ./scripts/boot_linux.py \
 
 - 主机/TFTP：`192.168.1.100/24`
 - 开发板：`192.168.1.101`
-- TFTP 文件名：`vmlinux_visionarm_lcd`
-- Linux 参数：`console=ttyS0,115200 rdinit=/sbin/init mem=120M`
+- TFTP 文件名：`vmlinux_visionarm_xnpu`
+- Linux 参数：`console=ttyS0,115200 rdinit=/sbin/init mem=120M initcall_debug=1 loglevel=20 ignore_loglevel`
 
 脚本成功后会保持串口交互，按 `Ctrl-]` 退出。
 
@@ -80,9 +80,12 @@ sudo -E ./scripts/boot_linux.py --interface enp3s0 \
 
 ```text
 ifconfig dmfe0 192.168.1.101
-load tftp://192.168.1.100/vmlinux_visionarm_lcd
-g console=ttyS0,115200 rdinit=/sbin/init mem=120M
+load tftp://192.168.1.100/vmlinux_visionarm_xnpu
+g console=ttyS0,115200 rdinit=/sbin/init mem=120M initcall_debug=1 loglevel=20 ignore_loglevel
 ```
+
+这组较长的启动参数同时规避当前 PMON 的短命令行启动兼容问题，并确保自动脚本
+能看到内核输出和 shell 提示符。
 
 若 TFTP 绑定 UDP 69 失败，确认使用了 `sudo -E`，并检查系统中是否已有
 TFTP 服务占用端口。若等待 PMON 超时，检查 Flash、JTAG bitstream、串口接线

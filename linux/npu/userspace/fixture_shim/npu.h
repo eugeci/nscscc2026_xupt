@@ -1,5 +1,5 @@
-#ifndef XUPT_NPU_FIXTURE_NPU_H
-#define XUPT_NPU_FIXTURE_NPU_H
+#ifndef XNPU_FIXTURE_NPU_H
+#define XNPU_FIXTURE_NPU_H
 
 #include "common_func.h"
 

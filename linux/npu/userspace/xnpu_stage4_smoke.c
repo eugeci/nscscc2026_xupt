@@ -28,7 +28,7 @@ static void fail(const char *operation, int result)
 
 int main(void)
 {
-	struct xupt_npu_result_v2 inference;
+	struct xnpu_result_v2 inference;
 	struct xnpu_package package;
 	struct xnpu_device device;
 	uint8_t *input;
@@ -65,7 +65,7 @@ int main(void)
 	output = malloc(package.info.output.bytes);
 	if (!output)
 		fail("output_alloc", -ENOMEM);
-	result = xnpu_device_open(&device, "/dev/xupt-npu");
+	result = xnpu_device_open(&device, "/dev/xnpu");
 	if (result)
 		fail("device_open", result);
 	printf("driver_abi=%u hardware_abi=%u caps=0x%08x\n",
