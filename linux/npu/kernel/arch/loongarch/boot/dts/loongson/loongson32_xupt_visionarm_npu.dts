@@ -1,0 +1,54 @@
+// SPDX-License-Identifier: GPL-2.0
+/dts-v1/;
+
+/ {
+	model = "XUPT VisionArm SoC with NPU";
+	compatible = "xupt,visionarm-npu", "xupt,chiplab-npu", "loongson,loongson3";
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	aliases {
+		serial0 = &cpu_uart0;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+		bootargs = "quiet loglevel=3 console=ttyS0,115200 rdinit=/init";
+	};
+
+	memory {
+		device_type = "memory";
+		reg = <0x00000000 0x08000000>;
+	};
+
+	cpuic: interrupt-controller {
+		compatible = "loongson,cpu-interrupt-controller";
+		interrupt-controller;
+		#interrupt-cells = <1>;
+	};
+
+	soc {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges = <0x10000000 0x10000000 0x10000000>;
+		dma-ranges;
+
+		npu: accelerator@1f100000 {
+			compatible = "xupt,npu-v1";
+			reg = <0x1f100000 0x00010000>;
+			interrupt-parent = <&cpuic>;
+			/* FPGA intrpt[5] maps to LoongArch CPU HWIRQ 7. */
+			interrupts = <7>;
+		};
+
+		cpu_uart0: serial@1fe001e0 {
+			compatible = "ns16550a";
+			reg = <0x1fe001e0 0x10>;
+			clock-frequency = <33000000>;
+			interrupt-parent = <&cpuic>;
+			interrupts = <3>;
+			no-loopback-test;
+		};
+	};
+};

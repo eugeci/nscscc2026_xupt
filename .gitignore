@@ -23,3 +23,6 @@ usage_statistics_webtalk.*
 
 # Local AI assistant settings
 .claude/settings.local.json
+
+# Simulation license/generated key
+ucli.key

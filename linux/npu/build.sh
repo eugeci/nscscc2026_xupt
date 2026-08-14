@@ -16,6 +16,8 @@ binary_fixture_dir="$fixture_dir/bin"
 userspace_dir="$script_dir/userspace"
 userspace_build="$work_dir/userspace-la32"
 init_kind="${NPU_INIT:-stage3}"
+visionarm_dir="$repo_root/VisionArm"
+visionarm_rootfs="${VISIONARM_ROOTFS:-}"
 
 if [ -n "${CROSS_COMPILE:-}" ]; then
 	cross_compile=$CROSS_COMPILE
@@ -48,22 +50,48 @@ stage4|stage5)
 		all "$userspace_build/xnpu-$init_kind-smoke"
 	cp "$userspace_build/xnpu-$init_kind-smoke" "$init_program"
 	;;
+demo)
+	if [ -z "$visionarm_rootfs" ] || [ ! -d "$visionarm_rootfs" ]; then
+		echo "NPU_INIT=demo requires VISIONARM_ROOTFS=<rootfs directory>" >&2
+		exit 2
+	fi
+	make -C "$userspace_dir" BUILD_DIR="$userspace_build" \
+		CC="$cc" AR="${cross_compile}ar" CFLAGS="-Os" LDFLAGS="-static" all
+	"$cc" -static -Os -Wall -Wextra \
+		"$visionarm_dir/linux/snake/snake.c" -o "$work_dir/snake"
+	;;
 *)
-	echo "Unknown NPU_INIT=$init_kind (expected stage3, stage4 or stage5)" >&2
+	echo "Unknown NPU_INIT=$init_kind (expected stage3, stage4, stage5 or demo)" >&2
 	exit 2
 	;;
 esac
 
 {
-	echo "dir /dev 0755 0 0"
-	echo "dir /proc 0555 0 0"
-	echo "dir /sys 0555 0 0"
-	echo "nod /dev/console 0600 0 0 c 5 1"
-	echo "nod /dev/null 0666 0 0 c 1 3"
-	echo "file /init $init_program 0755 0 0"
+	if [ "$init_kind" = demo ]; then
+		echo "dir /vision 0555 0 0"
+		echo "dir /models 0555 0 0"
+		echo "dir /fixtures 0555 0 0"
+		echo "file /usr/bin/arm $visionarm_dir/linux/tools/arm 0555 0 0"
+		echo "file /usr/bin/cam $visionarm_dir/linux/tools/cam 0555 0 0"
+		echo "file /usr/bin/lcdctl $visionarm_dir/linux/tools/lcdctl 0555 0 0"
+		echo "file /usr/bin/snake $work_dir/snake 0555 0 0"
+		echo "file /usr/bin/xnpu-inspect $userspace_build/xnpu-inspect 0555 0 0"
+		echo "file /usr/bin/xnpu-run $userspace_build/xnpu-run 0555 0 0"
+		echo "file /usr/bin/xnpu-regress $userspace_build/xnpu-regress 0555 0 0"
+		echo "file /vision/naruto.rgb565 $visionarm_dir/linux/assets/naruto_800x480.rgb565 0444 0 0"
+		echo "file /models/facenet_lbp_v1.xnpu $package_dir/facenet_lbp_v1.xnpu 0444 0 0"
+		echo "file /fixtures/facenet_seed42.bin $binary_fixture_dir/facenet_seed42.bin 0444 0 0"
+	else
+		echo "dir /dev 0755 0 0"
+		echo "dir /proc 0555 0 0"
+		echo "dir /sys 0555 0 0"
+		echo "nod /dev/console 0600 0 0 c 5 1"
+		echo "nod /dev/null 0666 0 0 c 1 3"
+		echo "file /init $init_program 0755 0 0"
+	fi
 	if [ "$init_kind" = stage3 ]; then
 		echo "file /npu_params.hex $parameter_hex 0444 0 0"
-	else
+	elif [ "$init_kind" != demo ]; then
 		echo "dir /models 0555 0 0"
 		echo "dir /fixtures 0555 0 0"
 		echo "file /models/facenet_lbp_v1.xnpu $package_dir/facenet_lbp_v1.xnpu 0444 0 0"
@@ -87,6 +115,12 @@ esac
 	fi
 } > "$initramfs_list"
 
+if [ "$init_kind" = demo ]; then
+	initramfs_source="$visionarm_rootfs $initramfs_list"
+else
+	initramfs_source="$initramfs_list"
+fi
+
 make -C "$kernel_dir" O="$build_dir" ARCH=loongarch \
 	CROSS_COMPILE="$cross_compile" la32_defconfig
 
@@ -95,12 +129,14 @@ make -C "$kernel_dir" O="$build_dir" ARCH=loongarch \
 	-e BUILTIN_DTB \
 	--set-str BUILTIN_DTB_NAME loongson32_xupt_npu \
 	-e BLK_DEV_INITRD \
-	--set-str INITRAMFS_SOURCE "$initramfs_list" \
+	--set-str INITRAMFS_SOURCE "$initramfs_source" \
 	-e DEVTMPFS \
 	-e DEVTMPFS_MOUNT
 
-# Keep the cycle-accurate OpenLA500 validation kernel small.  The upstream
-# board defconfig enables unrelated storage, network and multimedia stacks.
+# Keep cycle-accurate validation kernels small.  Demo builds retain the board
+# defconfig because the interactive VisionArm rootfs may need networking and
+# normal input/device support.
+if [ "$init_kind" != demo ]; then
 "$kernel_dir/scripts/config" --file "$build_dir/.config" \
 	-e EMBEDDED \
 	-e EXPERT \
@@ -143,6 +179,7 @@ make -C "$kernel_dir" O="$build_dir" ARCH=loongarch \
 	-d DEBUG_INFO \
 	-d IKCONFIG \
 	-d IKCONFIG_PROC
+fi
 
 make -C "$kernel_dir" O="$build_dir" ARCH=loongarch \
 	CROSS_COMPILE="$cross_compile" olddefconfig

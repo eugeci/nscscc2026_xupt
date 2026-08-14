@@ -37,8 +37,13 @@ install -D -m 0644 \
 install -D -m 0644 \
 	"$script_dir/kernel/include/uapi/linux/xupt_npu.h" \
 	"$kernel_dir/include/uapi/linux/xupt_npu.h"
+
+dts_source="$script_dir/kernel/arch/loongarch/boot/dts/loongson/loongson32_xupt_npu.dts"
+if [ "${NPU_INIT:-stage3}" = demo ]; then
+	dts_source="$script_dir/kernel/arch/loongarch/boot/dts/loongson/loongson32_xupt_visionarm_npu.dts"
+fi
 install -D -m 0644 \
-	"$script_dir/kernel/arch/loongarch/boot/dts/loongson/loongson32_xupt_npu.dts" \
+	"$dts_source" \
 	"$kernel_dir/arch/loongarch/boot/dts/loongson/loongson32_xupt_npu.dts"
 
 echo "$kernel_dir"

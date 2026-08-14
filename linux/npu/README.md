@@ -121,6 +121,36 @@ NPU debug run.
 The validation device tree advertises 16 MiB of RAM to keep cycle-accurate
 boot practical. This does not change the FPGA SoC's 128 MiB DDR layout.
 
+## VisionArm integrated FPGA demo
+
+The integrated branch uses the VisionArm/OpenLA500 FPGA top as its board
+baseline and adds the NPU at `0x1f100000`. The NPU DMA master shares the
+existing 32-bit CPU DDR port through a round-robin AXI arbiter; the camera
+S2MM and LCD/camera MM2S ports remain connected to their original DDR
+interconnect slots. NPU interrupt output `intrpt[5]` is CPU HWIRQ 7.
+
+Prepare the Vivado project before synthesis:
+
+```sh
+cd chiplab/fpga/loongson/2023.2
+vivado -mode batch -source prepare_visionarm_npu.tcl
+```
+
+To build one kernel containing the NPU driver, NPU command-line tools and the
+VisionArm utilities, provide the directory form of the known-good VisionArm
+root filesystem. It must already contain BusyBox (including `sh`, `devmem`,
+`dd` and `usleep`) and its normal `/init`:
+
+```sh
+NPU_INIT=demo VISIONARM_ROOTFS=/path/to/visionarm-rootfs \
+    ./linux/npu/build.sh
+```
+
+The build adds `arm`, `cam`, `lcdctl`, `snake`, `xnpu-inspect`, `xnpu-run`,
+`xnpu-regress`, the display image and the FaceNet demo package/fixture. Demo
+builds advertise all 128 MiB of DDR and retain the normal board kernel
+configuration instead of the reduced cycle-accurate simulation config.
+
 ## Userspace ABI
 
 ABI v2 uses this lifecycle:
