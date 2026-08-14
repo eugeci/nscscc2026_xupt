@@ -16,11 +16,15 @@ Usage:
   arm y up|down [steps]
   arm z forward|reverse [steps]
   arm grip open|close
+  arm home
+  arm position
   arm hello
   arm status
 
 Motion steps must be a multiple of 100 in the range 100..5000.
 The current ESP32 firmware couples one Y step to every three Z steps.
+`arm home` requires the ESP32 filesystem from this release and working
+X/Y/Z limit switches. Keep a hand on the motor-power switch during homing.
 EOF
 }
 
@@ -96,6 +100,16 @@ case "$axis:$direction" in
     grip:close)
         send_byte 0x38 || exit 1
         echo "armctl: gripper close command sent"
+        ;;
+    home:)
+        send_byte 0x39 || exit 1
+        echo "armctl: homing requested"
+        echo "armctl: verify DONE HOME on the ESP32 USB console"
+        echo "armctl: FPGA-to-ESP32 reply reception is not implemented yet"
+        ;;
+    position:)
+        send_byte 0x30 || exit 1
+        echo "armctl: position requested; read the ESP32 USB console"
         ;;
     hello:)
         for code in 0x48 0x45 0x4c 0x4c 0x4f 0x0a; do

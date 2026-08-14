@@ -59,6 +59,9 @@ demo)
 		CC="$cc" AR="${cross_compile}ar" CFLAGS="-Os" LDFLAGS="-static" all
 	"$cc" -static -Os -Wall -Wextra \
 		"$visionarm_dir/linux/snake/snake.c" -o "$work_dir/snake"
+	make -C "$visionarm_dir/linux/visionarm-block" \
+		BUILD_DIR="$work_dir/visionarm-block-la32" \
+		CC="$cc" CFLAGS="-Os" LDFLAGS="-static" all
 	;;
 *)
 	echo "Unknown NPU_INIT=$init_kind (expected stage3, stage4, stage5 or demo)" >&2
@@ -75,6 +78,7 @@ esac
 		echo "file /usr/bin/cam $visionarm_dir/linux/tools/cam 0555 0 0"
 		echo "file /usr/bin/lcdctl $visionarm_dir/linux/tools/lcdctl 0555 0 0"
 		echo "file /usr/bin/snake $work_dir/snake 0555 0 0"
+		echo "file /usr/bin/visionarm-block $work_dir/visionarm-block-la32/visionarm-block 0555 0 0"
 		echo "file /usr/bin/xnpu-inspect $userspace_build/xnpu-inspect 0555 0 0"
 		echo "file /usr/bin/xnpu-run $userspace_build/xnpu-run 0555 0 0"
 		echo "file /usr/bin/xnpu-regress $userspace_build/xnpu-regress 0555 0 0"

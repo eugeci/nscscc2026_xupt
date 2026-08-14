@@ -1,6 +1,10 @@
 # arm_reset.py    
 import utime 
 from config import *
+
+
+class HomingError(Exception):
+    pass
  
 class ArmReset:
     def __init__(self):
@@ -11,6 +15,12 @@ class ArmReset:
         self.time_value  = 1
         # YZ轴交替步进时的步数 
         self.yz_step_interval  = 10 
+        # Hard limits prevent a broken/disconnected switch from driving an
+        # axis forever.  Tune these only after measuring the real travel.
+        self.max_seek_steps = {'x': 12000, 'y': 12000, 'z': 14000}
+        self.max_release_steps = 800
+        self.release_backoff_steps = 80
+        self.debounce_samples = 4
         
     def _init_settings(self):
         """从config.py   初始化设置"""
@@ -48,17 +58,51 @@ class ArmReset:
         print("电机已锁定，准备程序控制")
         return self 
     
-    def _reset_single_axis(self, axis_pin, dir_pin, direction, limit_pin, axis_name):
+    def _pulse(self, axis_pin):
+        axis_pin.value(1)
+        utime.sleep_us(self.time_value * 300)
+        axis_pin.value(0)
+        utime.sleep_us(self.time_value * 300)
+
+    def _limit_active(self, limit_pin):
+        """Require several consecutive active samples to reject switch noise."""
+        for _ in range(self.debounce_samples):
+            if limit_pin.value() != 1:
+                return False
+            utime.sleep_ms(2)
+        return True
+
+    def _release_limit(self, axis_pin, dir_pin, direction, limit_pin, axis_name):
+        """Leave an already-active switch before starting a new seek."""
+        if not self._limit_active(limit_pin):
+            return
+
+        print(f"{axis_name}轴限位已触发，先反向退出")
+        dir_pin.value(1 - direction)
+        released = 0
+        while self._limit_active(limit_pin):
+            if released >= self.max_release_steps:
+                raise HomingError(f"{axis_name}轴限位无法释放")
+            self._pulse(axis_pin)
+            released += 1
+
+        for _ in range(self.release_backoff_steps):
+            self._pulse(axis_pin)
+
+    def _reset_single_axis(self, axis_pin, dir_pin, direction, limit_pin,
+                           axis_name, max_steps=None):
         """内部方法：复位单个轴"""
+        self._release_limit(axis_pin, dir_pin, direction, limit_pin, axis_name)
         dir_pin.value(direction)   
         print(f"开始复位{axis_name}轴...")
-        
+
+        if max_steps is None:
+            max_steps = self.max_seek_steps[axis_name.lower()]
         steps = 0 
-        while limit_pin.value()  == 0:
-            axis_pin.value(1)   
-            utime.sleep_us(self.time_value  * 200)
-            axis_pin.value(0)   
-            utime.sleep_us(self.time_value  * 200)
+        while not self._limit_active(limit_pin):
+            if steps >= max_steps:
+                raise HomingError(f"{axis_name}轴回零超时，检查限位开关和方向")
+            self._pulse(axis_pin)
             steps += 1 
             
         print(f"{axis_name}轴已复位到限位位置 (共{steps}步)")
@@ -66,6 +110,10 @@ class ArmReset:
     
     def _reset_yz_alternating(self):
         """内部方法：交替复位Y轴和Z轴"""
+        self._release_limit(self.axis_y_pin, self.y_pin, self.y_dir,
+                            self.limit_y, "Y")
+        self._release_limit(self.axis_z_pin, self.z_pin, self.z_dir,
+                            self.limit_z, "Z")
         self.y_pin.value(self.y_dir)   
         self.z_pin.value(self.z_dir)   
         print("开始交替复位Y轴和Z轴...")
@@ -79,27 +127,25 @@ class ArmReset:
             # 运动Y轴 
             if not y_limit_reached:
                 for _ in range(self.yz_step_interval):   
-                    if self.limit_y.value()  == 1:
+                    if self._limit_active(self.limit_y):
                         y_limit_reached = True 
                         print("Y轴已到达限位位置")
                         break 
-                    self.axis_y_pin.value(1)   
-                    utime.sleep_us(self.time_value  * 200)
-                    self.axis_y_pin.value(0)   
-                    utime.sleep_us(self.time_value  * 200)
+                    if y_steps >= self.max_seek_steps['y']:
+                        raise HomingError("Y轴回零超时，检查限位开关和方向")
+                    self._pulse(self.axis_y_pin)
                     y_steps += 1 
             
             # 运动Z轴 
             if not z_limit_reached:
                 for _ in range(self.yz_step_interval):   
-                    if self.limit_z.value()  == 1:
+                    if self._limit_active(self.limit_z):
                         z_limit_reached = True 
                         print("Z轴已到达限位位置")
                         break 
-                    self.axis_z_pin.value(1)   
-                    utime.sleep_us(self.time_value  * 200)
-                    self.axis_z_pin.value(0)   
-                    utime.sleep_us(self.time_value  * 200)
+                    if z_steps >= self.max_seek_steps['z']:
+                        raise HomingError("Z轴回零超时，检查限位开关和方向")
+                    self._pulse(self.axis_z_pin)
                     z_steps += 1 
         
         print(f"Y轴和Z轴交替复位完成 (Y轴:{y_steps}步, Z轴:{z_steps}步)")
@@ -164,4 +210,4 @@ class ArmReset:
 arm_reset = ArmReset()
  
 if __name__ == '__main__':
-    arm_reset.full_reset() 
+    arm_reset.full_reset()

@@ -100,34 +100,52 @@ def length_to_steps(length):
 def move_x_axis(steps, dir_value):
     """控制X轴电机转动指定步数"""
     x_pin.value(dir_value)  # 设置方向
+    moved = 0
     for _ in range(steps):
+        if dir_value == arm_reset.x_dir and arm_reset.limit_x.value() == 1:
+            print("X轴限位触发，停止运动")
+            break
         axis_x_pin.value(1)
         utime.sleep_us(time_value * 300)
         axis_x_pin.value(0)
         utime.sleep_us(time_value * 300)
+        moved += 1
+    return moved
 
 def move_y_axis(steps, dir_value):
     """控制Y轴电机转动指定步数"""
     y_pin.value(dir_value)  # 设置方向
+    moved = 0
     for _ in range(steps):
+        if dir_value == arm_reset.y_dir and arm_reset.limit_y.value() == 1:
+            print("Y轴限位触发，停止运动")
+            break
         axis_y_pin.value(1)
         utime.sleep_us(time_value * 300)
         axis_y_pin.value(0)
         utime.sleep_us(time_value * 300)
+        moved += 1
+    return moved
 
 
 def move_z_axis(steps, dir_value):
     """控制Z轴电机转动指定步数，并联动Y轴电机"""
     z_pin.value(dir_value)  # 设置方向
     y_steps = 0
+    moved = 0
     for i in range(steps):
+        if dir_value == arm_reset.z_dir and arm_reset.limit_z.value() == 1:
+            print("Z轴限位触发，停止运动")
+            break
         axis_z_pin.value(1)
         utime.sleep_us(time_value * 300)
         axis_z_pin.value(0)
         utime.sleep_us(time_value * 300)
+        moved += 1
         # 每移动3步Z轴，Y轴移动1步，方向固定为0
         if (i + 1) % 3 == 0:
             move_y_axis(1, 0)
+    return moved
 
 def control_servo(position):
     """控制舵机位置"""
