@@ -1,0 +1,11 @@
+#!/bin/sh
+
+/bin/mount -a
+
+# PMON uses dmfe0 only while loading the kernel.  Linux exposes the same MAC
+# as eth0; give it the demo network address before starting the shell.
+if /sbin/ifconfig eth0 192.168.1.101 netmask 255.255.255.0 up; then
+	echo "VisionArm network: eth0 192.168.1.101/24"
+else
+	echo "VisionArm network: failed to configure eth0" >&2
+fi

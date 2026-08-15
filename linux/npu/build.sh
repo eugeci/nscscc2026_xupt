@@ -91,6 +91,7 @@ esac
 		echo "file /usr/bin/xnpu-inspect $userspace_build/xnpu-inspect 0555 0 0"
 		echo "file /usr/bin/xnpu-run $userspace_build/xnpu-run 0555 0 0"
 		echo "file /usr/bin/xnpu-regress $userspace_build/xnpu-regress 0555 0 0"
+		echo "file /etc/init.d/rcS $visionarm_dir/linux/rootfs/rcS 0755 0 0"
 		echo "file /vision/naruto.rgb565 $visionarm_dir/linux/assets/naruto_800x480.rgb565 0444 0 0"
 		if [ -n "$visionarm_calibration" ]; then
 			echo "file /vision/calibration.ini $visionarm_calibration 0444 0 0"

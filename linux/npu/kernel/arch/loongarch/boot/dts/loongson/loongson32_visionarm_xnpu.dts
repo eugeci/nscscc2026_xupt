@@ -41,6 +41,20 @@
 		ranges = <0x10000000 0x10000000 0x10000000>;
 		dma-ranges;
 
+		gmac0: ethernet@1ff00000 {
+			compatible = "dmfe";
+			reg = <0x1ff00000 0x00010000>;
+			interrupt-parent = <&cpuic>;
+			/* FPGA intrpt[0] maps to LoongArch CPU HWIRQ 2. */
+			interrupts = <2>;
+			interrupt-names = "macirq";
+			mac-address = [00 98 76 64 32 19];
+			phy-mode = "rgmii";
+			bus_id = <0>;
+			phy_addr = <1>;
+			dma-mask = <0xffffffff 0xffffffff>;
+		};
+
 		npu: accelerator@1f100000 {
 			compatible = "xnpu";
 			reg = <0x1f100000 0x00010000>;
