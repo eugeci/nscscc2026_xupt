@@ -57,7 +57,11 @@ print_status()
     control_raw="$(read_reg "$CAM_CTRL")" || return 1
     status_raw="$(read_reg "$CAM_STATUS")" || return 1
     activity_raw="$(read_reg "$CAM_ACTIVITY")" || return 1
-    status_value=$((status_raw))
+    # The upper register bits contain debug state and may set bit 31.  BusyBox
+    # ash uses signed 32-bit arithmetic and rejects values such as 0xC53A78FB.
+    # Only bits 18:0 are status flags, so parse the low five hexadecimal digits.
+    status_value="$(printf '%s\n' "$status_raw" | sed 's/^0x.../0x/')"
+    status_value=$((status_value))
 
     echo "Camera control : $control_raw"
     echo "Camera status  : $status_raw"
@@ -115,9 +119,10 @@ camera_test()
     esac
 
     status_raw="$(read_reg "$CAM_STATUS")" || return 1
-    status_value=$((status_raw))
+    status_value="$(printf '%s\n' "$status_raw" | sed 's/^0x.../0x/')"
+    status_value=$((status_value))
 
-    if [ $((status_value & 0x3b)) -eq 0x3b ]; then
+    if [ $((status_value & 0x3b)) -eq 59 ]; then
         echo "PASS: OV5640 ID, SCCB and sensor clocks are present"
     else
         echo "FAIL: sensor status is $status_raw" >&2

@@ -38,6 +38,10 @@ Get-FileHash .\vmlinux_visionarm_lcd -Algorithm SHA256
 Get-FileHash .\vmlinux_visionarm_xnpu -Algorithm SHA256
 ```
 
+`vmlinux_visionarm_xnpu` 的设备树只向 Linux 声明低端120 MiB DDR；顶部8 MiB
+固定留给摄像头在 `0x07c00000` 和 `0x07d00000` 的双帧缓冲。当前PMON不能可靠
+把 `g` 命令后的参数传给内核，因此该隔离不能只依赖命令行中的 `mem=120M`。
+
 启动后可先确认驱动，再分别执行轮询和中断推理：
 
 ```sh

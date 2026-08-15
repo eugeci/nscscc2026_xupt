@@ -18,7 +18,14 @@
 
 	memory {
 		device_type = "memory";
-		reg = <0x00000000 0x08000000>;
+		/*
+		 * Keep the top 8 MiB outside Linux.  The camera VDMA uses fixed
+		 * frame buffers at 0x07c00000 and 0x07d00000, and this platform's
+		 * PMON does not pass its command line to Linux reliably.  Reserving
+		 * the range in the DT prevents DMA from overwriting initramfs pages
+		 * even when a PMON-side "mem=120M" argument is ignored.
+		 */
+		reg = <0x00000000 0x07800000>;
 	};
 
 	cpuic: interrupt-controller {
