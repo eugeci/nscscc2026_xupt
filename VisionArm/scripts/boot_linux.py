@@ -29,7 +29,7 @@ RELEASE_DIR = VISIONARM_DIR / "release"
 DEFAULT_BIT = RELEASE_DIR / "visionarm_npu_soc_top.bit"
 DEFAULT_KERNEL = RELEASE_DIR / "vmlinux_visionarm_xnpu"
 DEFAULT_BOOTARGS = (
-    "console=ttyS0,115200 rdinit=/sbin/init mem=120M "
+    "console=ttyS0,115200 rdinit=/sbin/init "
     "initcall_debug=1 loglevel=20 ignore_loglevel"
 )
 SERIAL_CANDIDATES = ("/dev/ttyUSB*", "/dev/ttyACM*")

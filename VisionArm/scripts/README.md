@@ -41,7 +41,7 @@ sudo -E ./scripts/boot_linux.py \
 - 主机/TFTP：`192.168.1.100/24`
 - 开发板：`192.168.1.101`
 - TFTP 文件名：`vmlinux_visionarm_xnpu`
-- Linux 参数：`console=ttyS0,115200 rdinit=/sbin/init mem=120M initcall_debug=1 loglevel=20 ignore_loglevel`
+- Linux 参数：`console=ttyS0,115200 rdinit=/sbin/init initcall_debug=1 loglevel=20 ignore_loglevel`
 
 脚本成功后会保持串口交互，按 `Ctrl-]` 退出。
 
@@ -81,11 +81,11 @@ sudo -E ./scripts/boot_linux.py --interface enp3s0 \
 ```text
 ifconfig dmfe0 192.168.1.101
 load tftp://192.168.1.100/vmlinux_visionarm_xnpu
-g console=ttyS0,115200 rdinit=/sbin/init mem=120M initcall_debug=1 loglevel=20 ignore_loglevel
+g console=ttyS0,115200 rdinit=/sbin/init initcall_debug=1 loglevel=20 ignore_loglevel
 ```
 
-这组较长的启动参数同时规避当前 PMON 的短命令行启动兼容问题，并确保自动脚本
-能看到内核输出和 shell 提示符。
+设备树使用 `reserved-memory/no-map` 隔离顶部8 MiB视频帧缓冲，因此启动参数
+不再用 `mem=120M` 截断物理地址范围；自动脚本仍可看到内核输出和shell提示符。
 
 若 TFTP 绑定 UDP 69 失败，确认使用了 `sudo -E`，并检查系统中是否已有
 TFTP 服务占用端口。若等待 PMON 超时，检查 Flash、JTAG bitstream、串口接线

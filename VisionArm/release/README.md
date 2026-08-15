@@ -26,7 +26,7 @@ shell。将网卡和串口名称替换为实际设备，完整说明见 `scripts
 ```text
 ifconfig dmfe0 192.168.1.101
 load tftp://192.168.1.100/vmlinux_visionarm_xnpu
-g console=ttyS0,115200 rdinit=/sbin/init mem=120M initcall_debug=1 loglevel=20 ignore_loglevel
+g console=ttyS0,115200 rdinit=/sbin/init initcall_debug=1 loglevel=20 ignore_loglevel
 ```
 
 Windows 校验示例：
@@ -38,9 +38,10 @@ Get-FileHash .\vmlinux_visionarm_lcd -Algorithm SHA256
 Get-FileHash .\vmlinux_visionarm_xnpu -Algorithm SHA256
 ```
 
-`vmlinux_visionarm_xnpu` 的设备树只向 Linux 声明低端120 MiB DDR；顶部8 MiB
-固定留给摄像头在 `0x07c00000` 和 `0x07d00000` 的双帧缓冲。当前PMON不能可靠
-把 `g` 命令后的参数传给内核，因此该隔离不能只依赖命令行中的 `mem=120M`。
+`vmlinux_visionarm_xnpu` 的设备树声明完整128 MiB DDR，并通过
+`reserved-memory/no-map` 将顶部8 MiB固定留给LCD暂存帧以及摄像头在
+`0x07c00000` 和 `0x07d00000` 的双帧缓冲。当前PMON不能可靠传递 `g` 命令后的
+参数，因此内存隔离完全由设备树保证，不依赖命令行中的 `mem=`。
 
 Linux启动时会自动把 `eth0` 配置为 `192.168.1.101/24`。主机网口使用
 `192.168.1.100/24`；进入shell后可用 `ping 192.168.1.100` 检查运行时网络。
