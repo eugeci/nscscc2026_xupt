@@ -53,3 +53,91 @@ netlist，避免其在下一次递归扫描时被错误加入综合。
 
 首轮只验证 CPU、MMU、Cache、AXI、DDR、串口和基础 Linux，不接入
 VisionArm、XNPU、LCD 或机械臂驱动。
+
+## 2026-08-18 PMON 交接排查
+
+### 板上已观察到的状态
+
+基础内核经 TFTP 正常装载，PMON 跳到入口 `0xa07b06e0` 后没有串口
+输出。VIO 捕获的首个异常为：
+
+```text
+PC       0xa09c38c8
+INST     0x2a003516    # ld.bu r22, r8, 13
+ECODE    0x3f          # TLB refill
+BADV     0x0000000d
+CRMD     0x000000a8
+DMW0     0xa0000011
+DMW1     0x80000001
+EENTRY   0x00000180
+TLBRENTRY 0x00000000
+r4-r7    0, 0, 0, 0
+```
+
+该指令来自 `fw_init_environ()`。`r8 == 0` 导致访问地址 `0x0d`，所以
+TLB refill 是空 `envp` 的结果，不是最先发生的 MMU 故障。
+
+### PMON 二进制结论
+
+分析对象为 Chiplab 文档链接的 2023-06-09 PMON：
+
+```text
+gzrom.bin
+SHA256 38ddef6e2a294d7be96e565a68d46763426008fb1c4ccbdad98c75cafad19329
+
+解压后的 pmon.bin
+SHA256 8766a664befeca4b2dc808be1aaca2ec75a51b6925880ee4e8466a5f518ac3f9
+```
+
+串口输出的下面一行是无格式参数的硬编码字符串，不能作为运行时
+寄存器值的证据：
+
+```text
+ac = 0x2, nsp @ 0xa5f00000, env @ 0xa5f00040, en @ 0x0
+```
+
+实际 `go` 路径在 `0x07034594..0x070345b0` 构造：
+
+```text
+r5 = 2
+r6 = 0xa4f00000
+r7 = 0xa4f00040
+r8 = 0
+r4 = 0
+bl 0x07053eec
+```
+
+`0x07053eec` 将这四个值写入当前线程上下文的偏移 `16..28`。最终
+交接也不是直接 `jirl`：`0x070572d8..0x07057384` 依次恢复 ESTAT、
+ECFG、ERA、PRMD、CRMD 和全部 GPR，再由 `ERTN` 进入内核。辅助函数
+通过 `0x070cdb70` 中的当前上下文指针写参数，而恢复路径使用固定上下文
+对象 `0x070d0b50`。复测时应确认这两个指针在 `go` 时指向同一对象；若
+不一致，参数会被写入非运行上下文，现象正好是内核入口 `r4-r7` 全零。
+
+### 无板阶段回归结果
+
+- VCS NSCSCC RTL 总回归：17/17 gate 通过。
+- CPU smoke 新增真实 PMON 路径：先写上下文参数，再恢复 5 个 CSR、
+  全部 GPR 并执行 `ERTN`；Linux 入口读到
+  `2/0xa4f00000/0xa4f00040/0`，通过。
+- LA32R MMU 定向测试：39 项检查通过，覆盖 Linux 使用的 DMW 配置。
+- Chiplab Verilator 直接启动基础 Linux：随机 AXI 延迟下运行
+  25,000,000 cycles、18,593,841 条指令，进入 devtmpfs/random 初始化。
+- 复位随机种子 `3`、`31`、`20260818` 各运行 2,500,000 cycles，均能
+  输出早期 Linux 启动信息。
+
+因此当前已排除通用 JIRL 重定向、上下文 store/load、全 GPR 恢复、CSR
+恢复、ERTN、早期 DMW/MMU 和随机复位初值问题。剩余最高优先级是板上
+PMON 当前上下文对象与恢复对象是否一致，以及入口参数被写入/恢复的确切
+时刻。
+
+### 下一次上板判据
+
+下一版 VIO 在内核入口第四条参数保存指令提交后锁存 `r4-r7`，避免在
+重定向边界过早采样。板卡重新可用后：
+
+1. 重新生成并下载带该 VIO 的 bitstream。
+2. 重复 PMON TFTP 启动，不换内核、不改变 bootargs。
+3. 用 `check_linux_debug.tcl` 读取首异常、CSR、DMW 和入口参数。
+4. 若入口仍为全零，继续增加 PMON 地址范围内的上下文写入/恢复探针；
+   若入口参数正确，则转查内核保存 `_fw_arg0..3` 之后的数据通路。
