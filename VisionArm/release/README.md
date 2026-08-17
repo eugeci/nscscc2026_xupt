@@ -9,6 +9,10 @@
 | `visionarm_npu_build_summary.md` | 合并比特流的综合、布局布线和时序摘要 |
 | `SHA256SUMS.txt` | 发布文件的 SHA-256 校验值 |
 
+当前 `visionarm_npu_soc_top.bit` 固化了摄像头启停修复：软件关闭摄像头时
+只停止新帧输入，不再单独复位仍可能存在未完成 DDR 事务的 AXI VDMA。
+该版本已通过综合、布局布线和 bitstream 生成，连续抓帧下板复测尚未完成。
+
 ## 使用顺序
 
 Flash 已烧录 PMON 后，在 Linux 主机上执行：
