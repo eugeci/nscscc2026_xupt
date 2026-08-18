@@ -3,9 +3,9 @@
 ## 固定版本
 
 - 主仓库基线：`origin/main` (`776d1e0`)
-- 主仓库 bring-up：`bringup/la32r-linux` (`5f484fb`，不含本轮文档提交)
-- CPU：`core/feature/la32r-mmu` (`51f8816`)
-- Chiplab bring-up：`21dbd93`
+- 主仓库 bring-up：`bringup/la32r-linux`（本文所在提交）
+- CPU：`core/feature/la32r-mmu` (`4aaa661`；相对位流基线只增加测试)
+- Chiplab bring-up：`b8fdccc`
 - Vivado：2023.2
 - CPU 时钟：33.333 MHz（系统时钟 100 MHz，DDR 参考时钟 200 MHz）
 
@@ -38,6 +38,9 @@ ELF entry 0xa07b06e0
 上述 bitstream 于 2026-08-18 15:36 生成，包含最新 PRELD/IDLE 实现、
 D-cache 未初始化状态修复及 56 路 PMON/AXI 一致性探针；综合、布局、布线
 和 bitgen 均为 0 error。该文件已于 15:37 下载到板卡，并完成下述复测。
+位流和配套 LTX 已作为普通 Git blob 提交并推送至 Chiplab
+`bringup/la32r-linux` 的 `b8fdccc`，不依赖 Git LFS。远端对象重新读取后的
+大小为 9,730,756 bytes，SHA256 与上表一致。
 
 ## 重建
 
@@ -437,3 +440,233 @@ CPU 用户态取指错误。
 3. 修正或屏蔽 `__show_regs` 中不受支持的 CSR 读取，避免诊断自身递归；
 4. 最小用户态通过后再换用与该内核 ABI 匹配的 BusyBox/rootfs，以 `/ #`
    作为最终通过判据。
+
+### 最小用户态下板结论
+
+上述第 1 步已完成。新增
+`chiplab/software/examples/linux_user_diag`，其 `/init` 是链接到
+`0x00010000` 的 4.8 KiB 静态 LoongArch ELF，不包含 libc、动态加载器或
+启动脚本。它只使用寄存器发起 `write(1, message, 36)`，检查返回值，然后在
+PLV3 执行整数与分支循环。诊断 rootfs 同时把该 ELF 安装为 `/init` 和
+`/bin/sh`，以兼容现有交接跳板内置的 `rdinit=/bin/sh`。
+
+构建过程不改写基础内核。工具从基础 `vmlinux` 的符号表和 `.init.data`
+自动计算内置 initramfs 的文件区间，复制内核后仅替换该区间；本轮确认副本
+的前缀和后缀均逐字节不变。构建命令为：
+
+```bash
+cd chiplab/software/examples/linux_user_diag
+make \
+  CROSS_COMPILE=/path/to/loongarch32r-linux-gnusf-
+```
+
+生成物为 `obj/vmlinux_user_diag`。本轮镜像的 SHA256 为：
+
+```text
+b55a44c9e11cdbbfb982ad94a69372eb3b6cda550922bba50adc8419004d38b2
+```
+
+使用同一 bitstream、PMON、TFTP 和交接跳板下板后，内核正常执行至：
+
+```text
+Run /bin/sh as init process
+process '/bin/sh' started with executable stack
+[user-diag] PLV3 write syscall PASS
+```
+
+这一结果至少覆盖：用户 ELF 装载、PLV3 取指、PLV3 数据读取、用户页表、
+系统调用入口、内核访问用户缓冲区、UART 输出及系统调用返回。故障边界因此
+从“任意 Linux 用户态执行”收窄到原 BusyBox/glibc 的启动及 `abort()` 软件
+路径；当前没有证据支持基础 PLV3 或 syscall 通路存在普遍 RTL 缺陷。
+
+接下来的优先级调整为：
+
+1. 反向追踪原 BusyBox 在 `0x0001045c` 进入 glibc `abort()` 的调用者与软件
+   条件，必要时在仿真中回放最短用户态指令/系统调用序列；
+2. 修正或规避旧内核 `__show_regs.part.15+0x158` 中对未实现状态的读取，使
+   后续用户异常能够留下单次、可分析的寄存器现场；
+3. 换用与该 5.14 LA32R 内核 ABI 匹配的最小 BusyBox/rootfs，最终验证稳定
+   出现 `/ #`。
+
+### 用户堆与 glibc/BusyBox 分层结果
+
+基础诊断随后增加了独立 RW `PT_LOAD`，并在纯汇编中继续检查：初始用户栈
+word store/load、`brk(0)`、扩展一页、按 16 字节对齐后的 4096-byte
+demand-zero 扫描、heap 首尾 store/load。最终同一板上运行结果为：
+
+```text
+[user-diag] PLV3 write syscall PASS
+[user-diag] stack/brk zero/store PASS
+```
+
+诊断过程中曾出现一次 `brk return FAIL`。十六进制输出为：
+
+```text
+brk old=0x006a3000 request=0x00000000 return=0x006a4000
+```
+
+这里内核实际已把 break 正确扩展到 `0x006a4000`；`request=0` 是早期诊断
+把跨 syscall 状态放在 ABI 保留寄存器 `r21` 所致。修正为 callee-saved
+`r23-r31` 后完整通过，因此该中间结果不是 CPU 或 `sys_brk` 缺陷。
+
+为区分 PID 1 的特殊信号语义，另以纯汇编 init 执行
+`clone(SIGCHLD)`，把原 rootfs 的静态 BusyBox 作为普通子进程启动。BusyBox
+在出现提示符前稳定输出：
+
+```text
+[busybox-diag] wrapper PID1 started
+[busybox-diag] BusyBox child launched
+malloc(): corrupted top size
+```
+
+这证明先前 `abort()`/`break 0` 的上游条件是 glibc malloc 的 top chunk
+一致性检查。`break 0` 只是 PID 1 不按默认 SIGABRT 动作退出后，glibc abort
+状态机使用的兜底终止指令。
+
+最后，以当前 LA32R 工具链重新静态链接了一个带完整符号的
+`malloc_diag.c`，只执行 `write`、`malloc(64)`、64-byte 写读校验和 `free`。
+对应镜像 SHA256 为：
+
+```text
+82758702a7ea1751317d01ab3eb5ad56f34943df38fe57f906676386414efd54
+```
+
+板上结果为：
+
+```text
+[malloc-diag] before malloc
+[malloc-diag] malloc/write/free PASS
+```
+
+其符号入口为 `main=0x106c0`、`sysmalloc=0x22670`、
+`_int_malloc=0x22e80`、`malloc=0x24d80`、`__sbrk=0x29f00` 和
+`__brk=0x4ef90`。这组结果排除了普通用户页、`brk`、demand-zero、基础
+glibc malloc 或 syscall 的普遍失败，但不能排除地址或 ELF 布局相关故障；
+后续的严格 A/B 实验确实在这一边界复现，见下一节。
+
+### 动态 rootfs 与 `/ #` 结果
+
+从 VisionArm 构建目录提取动态 BusyBox、`ld.so.1`、`libc.so.6`、
+`libm.so.6` 和 `libresolv.so.2`，构造了 2.30 MiB 的最小动态 rootfs。对应
+内核副本 SHA256 为：
+
+```text
+e962c9af5b12d9bab08e1ad8e966f9286df7c33c8808c6fec776fee53efec555
+```
+
+该组合在动态加载器中退出：
+
+```text
+Inconsistency detected by ld.so: dl-version.c: 205:
+_dl_check_map_versions: Assertion `needed != NULL' failed!
+Kernel panic - not syncing: Attempted to kill init! exitcode=0x00007f00
+```
+
+因此这组库不能作为“已配套”的 ABI 基线；它证明执行已进入动态加载器，
+但没有证明完整动态用户空间兼容。
+
+为先完成基础系统的交互判据，新增当前工具链静态链接的诊断 shell。使用
+`-Os` 构建时，其两个 `PT_LOAD` 为：
+
+```text
+RX file/vaddr 0x000000/0x00010000, filesz 0x7381c
+RW file/vaddr 0x073821/0x00084821, filesz 0x03be3, memsz 0x04843
+```
+
+ELF 与内核副本 SHA256 分别为：
+
+```text
+e5915894dda774b4926ef887f9d6a8b0029be483b83f5969b38b7911b7a0fbc1
+7d3a74aa485d91918f18110d63da30cd9f172766730e38468fe3b36c3705ed77
+```
+
+板上成功输出：
+
+```text
+LA32R Linux diagnostic shell
+type 'help' for commands
+/ #
+heap memtest: PASS
+```
+
+`memtest` 完成 4096-byte `malloc`、逐字节写入/读取校验和 `free`。至此，
+“基础内核进入可交互 `/ #`”已经用诊断 shell 达成；它不是 BusyBox，也不
+代表完整 rootfs 已通过。每次主机重新打开 USB-UART 后，板端会漏掉首个输入
+字节，自动交互时应先发送一个无意义前导字符；持续打开串口时输入正常。
+
+### 4 KiB ELF 布局最小复现
+
+诊断 shell 最初用 `-O2` 构建时，在 `main()` 的首个原始 `write` 之前就
+稳定出现 `malloc(): corrupted top size`。其 RW `PT_LOAD` 位于
+`0x00085821`；改为 `-Os` 后功能不变，RX 段缩短约 `0x150` bytes，RW 段
+回到 `0x00084821`，随即稳定进入 `/ #`。
+
+为排除 shell 代码路径差异，`malloc-layout-diag` 对已经通过的
+`malloc_diag.c` 只链接一段不会执行的 4096-byte `.text.layout_pad`：
+
+| 镜像 | `main` | RW `PT_LOAD` | 板上结果 |
+| --- | --- | --- | --- |
+| `vmlinux_malloc_diag` | `0x106c0` | `0x00084821` | malloc/write/free PASS |
+| `vmlinux_malloc_layout_diag` | `0x106c0` | `0x00085821` | `malloc(): corrupted top size` |
+
+填充版 ELF 和内核副本 SHA256 为：
+
+```text
+1163f244f0b91969ae5bf7238316c8f3b2b6280e3b57de432e161538254dc305
+3e5bb79cf59630b8d99861f424a880274ff2d197bb0392db999f522e26509fff
+```
+
+两版 `_start=0x104a0`、`main=0x106c0` 和 C 执行路径相同。填充插在
+`main` 之后，令 `__libc_start_main` 及后续 libc 代码、GOT 和 RW 数据整体
+后移一页。入口处访问 GOT 的 `pcaddu12i` 立即数由 120 变为 121，例如：
+
+```text
+通过版：0x104a4  pcaddu12i r4, 120 ; GOT load -> main 0x106c0
+失败版：0x104a4  pcaddu12i r4, 121 ; GOT load -> main 0x106c0
+```
+
+所以当前至少存在一个可靠的“用户态静态 ELF 后半段整体后移 4 KiB即失败”
+现象。候选边界包括：slot-1 `pcaddu12i` 加 GOT load、相邻 4 KiB TLB 奇偶页
+选择、跨页 I-cache 取指，以及内核 ELF 映射/页内容装载。它比完整 BusyBox
+更适合送入仿真。不能仅凭该现象断定 RTL：必须先在参考执行环境运行两版，
+并在 VCS 中检查 `0x104a4` 的结果、GOT load 地址/数据、跳转目标以及第一次
+偏离点。
+
+建议的下一轮无探针顺序为：
+
+1. 用 QEMU/参考 LA32R 环境运行两个 ELF，确认工具链产物本身一正一反还是
+   都通过；
+2. 给 `cpu_smoke` 增加 slot-1 `pcaddu12i` 立即数 120/121 后紧跟 GOT-style
+   load 的定向检查；
+3. 增加 4 KiB TLB 偶/奇页执行和数据读取测试，分别把代码与 GOT 放到板上
+   两组虚拟地址；
+4. 在 SoC 仿真可承受时直接预装两个诊断内核，以首次用户态偏离为终点，
+   不等待完整交互系统启动。
+
+其中第 2 步已加入 `tb_loongarch_cpu_smoke` 并由 VCS 通过：测试在 slot 1
+执行 `pcaddu12i imm=121`，紧跟 `ld.w -380`，读回预置 GOT word。独立
+MMU VCS 用例的 39 项检查也通过，其中已覆盖 4 KiB 偶页与奇页的数据地址
+翻译。两项结果排除了未分页的 PC-relative/GOT 序列和 MMU 组合翻译的简单
+错误，但尚未覆盖 `cpu_top + I-cache + D-cache` 在 PLV3 分页模式下的连续
+跨页执行。当前主机未安装 LA32R QEMU/NEMU 可执行文件，所以第 1 步暂时
+缺少参考环境；下一项最有信息量的工作是增加完整 CPU 分页执行定向用例，
+或让现有 SoC Verilator 在首次用户态分歧处提前停止。
+
+### 诊断镜像的可重复构建
+
+最初下板镜像中的 gzip 时间戳已经固定，但 `cpio newc` 仍记录临时目录的
+inode 编号，因此上文记录的板测内核 SHA256 不能由第二次构建逐字节复现；
+其中用户 ELF 和文件内容没有变化。构建脚本现已统一使用
+`cpio --reproducible`。连续两次强制重建的下列 SHA256 完全一致：
+
+```text
+0914d803439fb0b2d5765e6e434aca836c897db6dea52488121417f44a2fde1a  vmlinux_user_diag
+d95cfb38bcea732cece52e6e66317c29e68848d7a34e0d25b093c2de6ba1438c  vmlinux_malloc_diag
+9f4f9b5c894ecc98c8f37284bf7e82c2d68dee67ce22937df79b8ed42a44ca52  vmlinux_malloc_layout_diag
+26b878d2e868202a490f4c08adfcae06c4308c419263cc8a648b154110602ab9  vmlinux_diag_shell
+23b89b409fbf80149f19d7ea5b10bf0db2406620a11725d059e08ff4da349433  vmlinux_busybox_diag
+8b49cd7247770e9f88fd57835e4f0515ceecb8b920345f84c5901b4de8f7cdea  vmlinux_dynamic_busybox
+```
+
+这些诊断内核是从已跟踪的基础 `vmlinux` 自动派生的构建产物，不提交到
+Git；板测用 FPGA `soc_top.bit`/`soc_top.ltx` 则已按前述路径直接跟踪。
