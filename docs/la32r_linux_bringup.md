@@ -1032,3 +1032,40 @@ irom_req_addr, refill_buffer_line_addr_q, refill line data
 
 板级通过标准也应改为“冷复位后第一次 exec 即成功”。第二次或后续 `ls`
 成功只能证明系统能够通过 cache/page 状态变化绕过首错，不能视为修复。
+
+## WB repair 修复版 Linux/a4f 复测（2026-08-19）
+
+使用同一 `a140b4a`/core `6e5d375` bitstream，冷复位后按以下顺序启动：
+
+```text
+ifconfig dmfe0 192.168.1.101
+load tftp://192.168.1.100/vmlinux_nand_disabled_stripped
+load tftp://192.168.1.100/linux_handoff_trampoline_a4f
+g
+```
+
+先误用 `linux_handoff_trampoline_a5f` 时仍停在 PMON 参数打印之后；改用正确的
+`a4f` 跳板后，Linux 完成协议栈、串口、initmem 释放等初始化，并进入：
+
+```text
+[    5.388000] Run /bin/sh as init process
+[    5.416000] Kernel panic - not syncing: Attempted to kill init! exitcode=0x00000000
+```
+
+这不是内核未启动。`exitcode=0` 表示 PID 1 的 `/bin/sh` 已被成功装载并正常
+返回；Linux 规定 PID 1 退出后必须 panic。相较旧 bitstream 上同一镜像进入
+glibc/BusyBox `abort()` 并触发 fatal signal 5，本次已越过原用户态异常路径，
+CPU/MMU/DDR、内核主路径以及首次用户 ELF 装载均已通过。
+
+TFTP 中实际使用的 `a4f` 跳板已复核为：
+
+```text
+e1b582eaf65cb2688bedac5061c7fdf4ed9ad1b32d8ef1bb8bff7c6f8eb54100
+console=ttyS0,115200 rdinit=/bin/sh print-fatal-signals=1 -- -i
+```
+
+因此当前 Linux 阻塞点调整为 init/console 保活，而非早期硬件启动。下一步应
+构造显式 PID 1 supervisor 或诊断 shell：持续读取 `/dev/console`，即使子
+shell 返回也不退出；同时记录 BusyBox 实际收到的 argc/argv 和 fd 0/1/2，
+确认内核命令行中的 `-- -i` 是否被该 rootfs 的 shell 接受。也可构建独立
+`a4f` 跳板改用 `rdinit=/sbin/init` 做对照，但不得再使用 `a5f`。
