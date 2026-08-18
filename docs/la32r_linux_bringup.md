@@ -743,7 +743,7 @@ g
 
 ## uCore `ls` 代码页损坏与 WB repair 关键证据（2026-08-19）
 
-### 结论与版本边界
+### 初步结论与版本边界（已被后续板测修正）
 
 在 CPU `f12ef387810b74dc30a3d70120e83780fe6fa172` 对应的板级镜像上，
 uCore 能完成内核初始化、挂载 initrd、进入用户 shell，但执行 `ls` 后稳定在
@@ -753,7 +753,7 @@ uCore 能完成内核初始化、挂载 initrd、进入用户 shell，但执行 
 MMU 错译，而是旧 core 在 EX 停顿期间让仍属于当前 EX token 的 WB repair
 标记继续引用可自由变化的实时 `wb_load_data_ex`。
 
-当前工程判断的概率与排查优先级为：
+在 `6e5d375` 尚未生成并下板前，工程判断的概率与排查优先级曾为：
 
 1. **WB repair 在 EX stall 期间没有锁存：约 85%～90%。** 错误双字可以在
    同一 ELF 的更早地址精确找到，且触发模式与 `CORE-005` 的定向仿真首错
@@ -766,6 +766,10 @@ MMU 错译，而是旧 core 在 EX 停顿期间让仍属于当前 EX token 的 W
 上述百分比是基于当前板级证据的工程置信度，不是统计测量。最终确认方法是
 保持 uCore 镜像、PMON 命令和测试步骤不变，仅把 bitstream 从 `f12ef38`
 替换为包含 `6e5d375` 的版本；若 `ls` 随即恢复，即可确认该根因。
+
+后续已经完成这一严格 A/B 测试，`ls` 的首次异常没有消失，因此上述概率
+判断不再成立；`CORE-005` 是已确认并已修复的独立 RTL bug，但不能解释本次
+uCore 首次执行失败。更新后的板测证据和排查方向见下一节。
 
 修复提交为：
 
@@ -908,3 +912,123 @@ uncached 视图与 cached/InstD 视图不同，说明抓取时 cache 与 DDR 视
 
 若这一版通过，即可把本次 uCore 故障归并到 core `CORE-005`；若仍失败，
 保留首次错误 store 的波形再转入 DCache/AXI 二级定位。
+
+## WB repair 修复版首次 `ls` 失败、第二次成功（2026-08-19）
+
+### 严格 A/B 板测结果
+
+Chiplab `a140b4ae8f4f0c0ca36de1f27f742564c1e1aa9a` 重新生成了包含
+core `6e5d3754f4292290e704c07c6096189dfd5a8f0d` 的 bitstream，主仓库由
+`0995afa` 固定该 Chiplab 提交。实际下载文件为：
+
+```text
+9812ab2052c125b050dafeffda2f56d04c36b82a48804b5a9b8f3e32580eca10  soc_top.bit
+50b216abd0ed79598c97f5bb4ba5691c539afc0e1a200b02f9d83da8ead388ad  soc_top.ltx
+```
+
+保持 PMON 命令、uCore polling 2-way memdiag 镜像和启动过程不变后，第一次
+执行 `ls` 仍在相同位置失败：
+
+```text
+InstD[-1]  = 0x002b0000
+InstD[0]   = 0x0015016c
+Code PTE   = 0xa012d005
+Code PA    = 0xa012db10
+Cached[-1] = 0x002b0000
+Cached[0]  = 0x0015016c
+Uncache[-1]= 0xe9840201
+Uncache[0] = 0xc3490328
+EPC        = 0x10000b10
+error: -9 - process is killed
+```
+
+这证明 `6e5d375` 的 WB repair hold 并未消除该板级首错，因而不能再把
+`CORE-005` 作为本次 uCore 故障的主根因。更关键的是，不复位、不重新下载
+bitstream，在同一个 shell 中立即再次执行 `ls`，程序正常列出目录并返回：
+
+```text
+@ is [directory] ... @'.'
+[d] ... .
+[d] ... ..
+[-] ... ls
+[-] ... test.txt
+[-] ... cat
+[-] ... sh
+lsdir: step 4
+$
+```
+
+所以 ELF、`0x10000b10` 对应的合法指令和基础用户态执行能力均正常；故障
+依赖首次 exec 的物理页/cache 状态。第二次 `ls` 是否复用了同一个物理页尚
+未记录，不能直接假定两次 `Code PA` 相同。
+
+### 对缓存维护链路的源码核对
+
+uCore 的磁盘 ELF 装载函数 `load_icode()` 在每次把 segment 内容写入新页后
+调用 `fence_i(page2kva(page) + off, size)`。当前 `fence_i()` 顺序为：
+
+```text
+DBAR
+每 16 bytes：
+  CACOP 9, address       # DCache indexed writeback/invalidate, way 0
+  CACOP 9, address | 1   # 同一 index，way 1
+  CACOP 8, address       # ICache indexed invalidate
+IBAR
+```
+
+当前 RTL 中：
+
+- DCache line 为 32 bytes，`maint_index=maint_addr[13:5]`；mode 1 用
+  `maint_addr[0]` 选择 way，`fence_i()` 每 16 bytes 前进会对同一 DCache
+  index 重复维护，虽冗余但不应导致错误；
+- ICache line 为 16 bytes，`maint_index=maint_addr[12:4]`，每 16 bytes
+  前进与其 line 大小一致；
+- DCache 的维护完成依赖 `state_maint_done`，脏行路径应等待 writeback
+  response 后才 invalidate/完成；
+- RI 异常诊断只读取 InstD、cached 和 uncached 三种视图，没有执行 CACOP，
+  因而第二次成功不是诊断代码主动 flush cache 的直接结果，更可能来自
+  `do_exit()` 后页释放/重分配、替换或写回状态变化。
+
+第一次失败时 cached/InstD 始终为同一对错误值，而 uncached 值相对旧
+bitstream 已变化，进一步把边界收窄到 DCache dirty line、writeback 地址/
+数据、CACOP way 维护或 I/D cache 可见性，而不是固定 ELF 内容或译码。
+
+### 更新后的优先排查方向
+
+仿真应从 `load_icode()` 首次装载 `ls` 开始，而不是从最终 RI 开始：
+
+1. 记录第一次和第二次 exec 为 `VA=0x10000b0c` 分配的 PTE、物理页和
+   DCache set/tag/way，确认第二次成功是否仅因换了物理页或 cache way；
+2. 对目标物理页每条 32-byte DCache line，核对软件发出的两个 mode-1
+   `CACOP 9` 是否分别以 `maint_addr[0]=0/1` 被接受并各返回一次 done；
+3. 若选中 way 为 valid+dirty，跟踪 `maint_selected_tag` 组成的 writeback
+   地址、整条 line 数据、`WSTRB`，并确认 `BVALID/BREADY/BRESP` 返回原
+   maintenance owner 后才出现 `dcache_maint_done`；
+4. 检查第二条 `CACOP 9` 是否因前一条 valid/done 延续而被误判已完成，或
+   是否重复维护 way 0；
+5. 检查紧随其后的 `CACOP 8` 是否在对应 DCache 脏行写回真正完成前开始，
+   以及 ICache refill 是否可能从旧 DDR 内容取回；
+6. 在 `fence_i()` 返回点同时比较目标字在 DCache、DDR 模型和下一次
+   ICache refill response 中的值。此时正确值必须已经是
+   `0x29bfb2c4/0x29bfa2c5`；
+7. 增加“装载→执行失败→释放页→再次装载”的定向用例，固定第二次复用同
+   一物理页和改用另一物理页各跑一次，以区分 stale tag/dirty 与地址相关
+   的 set/way 问题。
+
+建议波形至少加入：
+
+```text
+cache_maint_addr, cache_maint_mode
+dcache_maint_valid, dcache_maint_done
+maint_start, maint_active_q, maint_selected_way
+maint_selected_valid, maint_selected_dirty, maint_needs_writeback
+maint_selected_tag, maint_index
+wb_state, wb_resp_ok
+AWVALID/AWREADY/AWADDR, WVALID/WREADY/WDATA/WSTRB/WLAST
+BVALID/BREADY/BRESP
+icache_maint_valid, icache_maint_done
+irom_req_addr, refill_buffer_line_addr_q, refill line data
+```
+
+板级通过标准也应改为“冷复位后第一次 exec 即成功”。第二次或后续 `ls`
+成功只能证明系统能够通过 cache/page 状态变化绕过首错，不能视为修复。
