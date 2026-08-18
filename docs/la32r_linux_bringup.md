@@ -1069,3 +1069,64 @@ console=ttyS0,115200 rdinit=/bin/sh print-fatal-signals=1 -- -i
 shell 返回也不退出；同时记录 BusyBox 实际收到的 argc/argv 和 fd 0/1/2，
 确认内核命令行中的 `-- -i` 是否被该 rootfs 的 shell 接受。也可构建独立
 `a4f` 跳板改用 `rdinit=/sbin/init` 做对照，但不得再使用 `a5f`。
+
+### NAND-disabled 诊断 shell 与 Linux RX 边界
+
+首次构建的 `vmlinux_diag_shell_stripped` 误以启用 NAND 的原始内核为底包，
+启动后停在：
+
+```text
+ls1a_nand: mtd struct base address is a102b800
+nand: 128 MiB, SLC, erase size: 128 KiB, page size: 2048, OOB size: 64
+Scanning device for bad blocks
+```
+
+随后改用已确认的 NAND-disabled 内核
+`2bce696a1a42ec47b24889d0385144b6f25c50902fb3d7e2e62dfff9f9994892`
+作为底包，注入同一静态诊断 shell 并 strip，得到：
+
+```text
+9402e803ff00121de014a8aec2dbc5141704d7cf5aeab5672fe923253ebecb52
+vmlinux_diag_shell_nand_disabled_stripped
+```
+
+使用原 `a4f` `/bin/sh` 跳板启动后，板上稳定达到：
+
+```text
+[    1.840000] Run /bin/sh as init process
+LA32R Linux diagnostic shell
+type 'help' for commands
+/ #
+```
+
+这组结果覆盖 Linux 内核启动、initramfs 解包、用户 ELF exec、PLV3 取指/
+数据访问、用户态 `write()` syscall、ttyS0 输出以及 PID 1 保活。此时串口
+输入无响应，无法执行 `help` 或 `memtest`。同一物理串口在本次启动前的
+PMON，以及同一 bitstream 的 uCore shell 中均能接收命令，因此主机串口
+配置、USB-UART 和 FPGA RX 引脚不是首要嫌疑；故障边界收窄到 Linux
+`ttyS0` RX、IRQ 18、控制台 fd 0 或用户 `read()` 路径。
+
+Linux 日志已经识别：
+
+```text
+1fe001e0.serial: ttyS0 at MMIO 0x1fe001e0 (irq = 18, base_baud = 2062500)
+printk: console [ttyS0] enabled
+```
+
+下一轮按以下顺序排查：
+
+1. 在诊断 shell 的 `read(0, ...)` 前后打印标记，确认用户程序确实进入并
+   阻塞在 read syscall，而不是命令循环本身未运行；
+2. 在 `do_execve` 后核对 PID 1 的 fd 0/1/2 是否都指向 `/dev/console`，
+   以及 fd 0 的 file mode 是否允许读取；
+3. 按键时观察 UART LSR data-ready、RBR 数据和 IER RX enable，确认字符
+   已进入 `0x1fe001e0` UART；
+4. 检查 IRQ 18 在外设、中断控制器、CPU `ESTAT.IS`、`ECFG.LIE` 各层是否
+   pending/enable，并确认 Linux 8250 ISR 是否实际进入；
+5. 若 RBR 有数据但 IRQ 不到，先用定时 polling RX 做最小旁路；若 polling
+   能让诊断 shell 接收命令，即可把根因固定在中断路由/应答链路；
+6. 若 ISR 已进入但 read 不返回，继续检查 8250 flip buffer、TTY ldisc、
+   wait queue wakeup 和 console fd 绑定。
+
+当前板级里程碑应记录为“Linux 进入稳定用户态提示符，TX 正常，RX 未通”，
+而不是 Linux 启动失败。
