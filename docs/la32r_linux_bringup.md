@@ -740,3 +740,157 @@ g
   跳板；
 - 主仓库随后固定的 CPU `f12ef387`（MulDiv redirect 修复）未包含在本轮
   bitstream 中，仍需单独重新生成并下板验证。
+
+## uCore `ls` 代码页损坏与 WB repair 关键证据（2026-08-19）
+
+### 结论与版本边界
+
+在 CPU `f12ef387810b74dc30a3d70120e83780fe6fa172` 对应的板级镜像上，
+uCore 能完成内核初始化、挂载 initrd、进入用户 shell，但执行 `ls` 后稳定在
+用户地址 `EPC=0x10000b10` 触发保留指令异常。通过在异常前后同时读取指令
+映射、cached 数据别名和 uncached 别名，已经得到一组可与 RTL
+`CORE-005` 一一对应的证据。当前最高概率根因不是 `ls` ELF、译码器或简单
+MMU 错译，而是旧 core 在 EX 停顿期间让仍属于当前 EX token 的 WB repair
+标记继续引用可自由变化的实时 `wb_load_data_ex`。
+
+修复提交为：
+
+```text
+6e5d3754f4292290e704c07c6096189dfd5a8f0d
+fix(pipeline): hold WB repair data across EX stalls
+```
+
+`bringup/la32r-linux` 已在 `3aba3b0` 把 `core` 子模块固定到该提交，但这只
+说明源码引用已经更新；必须确认 Vivado 实际生成、下载的 bitstream 也来自
+`6e5d375` 或更晚版本。此次产生故障截图的 `f12ef38` bitstream 不包含该
+修复，不能用于否定 `6e5d375`。
+
+### 板级证据闭环
+
+`ls` ELF 中目标位置的正确内容与板上读取结果如下：
+
+| 位置 | ELF 正确指令字 | 板上 InstD/cached 读取 | 结果 |
+| --- | --- | --- | --- |
+| `0x10000b0c` | `0x29bfb2c4` | `0x002b0000` | 已损坏 |
+| `0x10000b10` | `0x29bfa2c5` | `0x0015016c` | 已损坏并触发 RI |
+
+错误的相邻双字不是随机噪声；它们在同一个 `ls` ELF 的更早位置精确出现：
+
+```text
+0x1000067c: 0x002b0000
+0x10000680: 0x0015016c
+```
+
+源、目标地址相差 `0x490`。也就是说，早先读取的一对合法程序内容被写入了
+后续代码位置。这比“目标行发生随机 bit flip”更符合 load consumer 使用旧
+数据后继续参与地址/数据计算的故障模型。`EPC=0x10000b10` 的 RI 是代码页
+已经损坏后的结果，不是首个错误周期；仿真必须向前追到首次写坏该代码页的
+store。
+
+同一诊断还打印了：
+
+```text
+Code PTE = 0xa012d005
+Code PA  = 0xa012db10
+uncached[-1] = 0x47eb2032
+uncached[0]  = 0xffdf82a2
+```
+
+uncached 视图与 cached/InstD 视图不同，说明抓取时 cache 与 DDR 视图并不
+一致；但在对 dirty line 完成 writeback、barrier 和 invalidate 之前，不能
+据此单独判定 DDR 或 DCache 是根因。它应作为二级检查项，而不应覆盖上面
+已经闭环的“旧 load 数据被后续指令使用”证据。
+
+### RTL 触发条件
+
+旧实现中的最小触发序列是：
+
+1. load A 刚完成，年轻指令以 `*_wb_repair=1` 进入 EX，操作数应取 A；
+2. 同一 EX token 因 Slot-0 访存、MMU 或 DCache 背压而保持，
+   `ex_allowin=0`；
+3. 后一个 load B 推进到 WB，实时 `wb_load_data_ex` 从 A 变成 B；
+4. repair 标记仍属于被停住的 EX token，但组合数据已跟随总线变成 B；
+5. token 解除停顿后用 B 完成 ALU、LSU 地址或 store-data 计算，最终污染
+   后续代码页。
+
+`6e5d375` 在首个阻塞边沿把 A 锁存到
+`ex_wb_repair_hold_data`，并在 token 前进或 flush 前通过
+`ex_wb_repair_data` 持续提供 A。修复同时覆盖普通/Slot-1 操作数以及 LSU
+低地址、对齐判断路径。
+
+### 队友仿真排查清单
+
+优先做以下 A/B 仿真，不要从最终 RI 开始猜测译码：
+
+1. 分别使用 `f12ef38` 和 `6e5d375` 运行：
+
+   ```bash
+   bash core/02_Design/verification/loongarch/functional/run_cpu_smoke.sh
+   ```
+
+   现有 `tb_loongarch_cpu_smoke.sv` 已构造同型场景：A 为
+   `0x11112222`、B 为 `0xaaaa5555`，强制 `mmu_data_ready=0` 让 EX 停顿。
+   旧版应稳定暴露 consumer 跟随 B，修复版最终 `$r30` 必须保持 A。
+
+2. 波形至少加入下列信号，并以“repair token 首次进入 EX”为时间零点：
+
+   ```text
+   ex_valid, ex_pc, ex_s1_valid, ex_s1_pc
+   ex_rs1_wb_repair, ex_rs2_wb_repair
+   ex_alu_src1_wb_repair, ex_alu_src2_wb_repair
+   ex_s1_rs1_wb_repair, ex_s1_rs2_wb_repair
+   ex_s1_alu_src1_wb_repair, ex_s1_alu_src2_wb_repair
+   ex_allowin, ex_flush, mmu_data_ready, mem_can_advance
+   wb_load_data_ex
+   ex_wb_repair_hold_valid, ex_wb_repair_hold_data, ex_wb_repair_data
+   ex_alu_src1_repair, ex_alu_src2_repair
+   ex_s1_alu_src1_repair, ex_s1_alu_src2_repair
+   ex_lsu_addr_low, ex_s1_lsu_addr_low
+   ex_rs2_data_repair, ex_s1_store_data_raw
+   ```
+
+3. 必须确认下面四个时序判据：
+
+   - `ex_any_wb_repair && !ex_allowin` 的首个上升沿锁存当拍
+     `wb_load_data_ex`；
+   - 随后即使 `wb_load_data_ex` 由 A 变为 B，`ex_wb_repair_data`、修复后的
+     operand、LSU 低地址和 store data 都保持 A 对应值；
+   - token 前进后 `ex_wb_repair_hold_valid` 清零，下一条指令才可使用 B；
+   - `ex_flush` 和 reset 无条件清除 hold，不能把 A 泄漏给错误路径或下一
+     token。
+
+4. 在 uCore/SoC 长仿真中，对支撑 `VA=0x10000b0c` 的物理页设置写监控。
+   首次发现写数据不是 `0x29bfb2c4/0x29bfa2c5` 时立即停止，向前回溯该
+   store 的源 load、repair 标记和 EX stall；不要等到取指在
+   `0x10000b10` 报 RI。同步记录：
+
+   ```text
+   commit PC / load PC / store PC
+   load VA/PA/data、store VA/PA/data/wstrb
+   TLB/DMW 命中与 MAT
+   DCache hit/refill/writeback
+   AXI AR/R/AW/W/B 的 valid/ready/id/addr/data/strb/last/resp
+   ```
+
+5. 若 `6e5d375` 后首次错误 store 仍存在，再按以下顺序排查，避免把缓存
+   非一致快照误判成根因：
+
+   - 检查 DCache dirty line 的 writeback 地址、四个 word 和 `WSTRB`；
+   - 检查 AXI 背压期间 AR/AW/W payload 是否保持稳定，以及 R/B response
+     是否返回给原 owner；
+   - 在执行 writeback + DBAR + invalidate 后再比较 cached、InstD 与
+     uncached 三种视图；
+   - 最后检查同一 VA 的 PTE、物理页号、ASID 和 4 KiB 奇偶页选择。
+
+### 新 bitstream 的板级通过判据
+
+新 bitstream 必须明确记录 core commit 为 `6e5d375` 或更新版本。继续使用
+同一个 polling memdiag uCore 镜像执行 `ls`，同时满足以下条件才算闭环：
+
+- `0x10000b0c/0x10000b10` 保持 ELF 中的正确指令字；
+- 不再出现 `EPC=0x10000b10`、`ECODE=0x0d`；
+- `ls` 正常返回目录并可重复执行；
+- shell 进程保持存活，串口输出无随执行路径变化的乱码。
+
+若这一版通过，即可把本次 uCore 故障归并到 core `CORE-005`；若仍失败，
+保留首次错误 store 的波形再转入 DCache/AXI 二级定位。
