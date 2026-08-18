@@ -1033,6 +1033,66 @@ irom_req_addr, refill_buffer_line_addr_q, refill line data
 板级通过标准也应改为“冷复位后第一次 exec 即成功”。第二次或后续 `ls`
 成功只能证明系统能够通过 cache/page 状态变化绕过首错，不能视为修复。
 
+### MAT=0 对照实验：问题继续收敛到取指存储属性链路
+
+在同一个 `a140b4a`/core `6e5d375` bitstream 上又完成了两组软件对照：
+
+1. 将 `fence_i()` 改为 DCache 两个 way 完成后增加第二道 `DBAR`，再做
+   ICache invalidate 和 `IBAR`；第一次 `ls` 仍失败，第二次成功；
+2. 在 `load_icode()` 给用户可执行页 PTE 增加 `PTE_PCD`，并修改
+   `la32_tlb.c`，使该页写入 TLBELO 时不再附加 `MAT=coherent cached`，即
+   用户代码页以 `MAT=0` 取指；第一次 `ls` 仍在相同用户入口附近 RI，第二次
+   `ls` 和随后 `cat test.txt` 正常。
+
+板测文件及 SHA256：
+
+```text
+2002fca7e1ed3b45339774e139c23687aee8de1038cda9c46cf2192018902a27  ucore-kernel-initrd-polling-2way-memdiag-dbar2phase
+690734aacc893ba58a05c7ab1667db28d3630de4c6a53b950e050d32c960ec66  ucore-kernel-initrd-polling-2way-memdiag-uncached-pte.elf
+```
+
+第一组排除了“只缺少 DCache writeback 与 ICache invalidate 之间的一条屏障”
+这一简单解释。第二组比普通 cache flush A/B 更关键：若 TLB 的 MAT=0 已正确
+传到取指端，ICache 不应命中旧 cached line，而应走 uncached fetch；该路径
+仍首错，说明当前最高概率边界是以下两类之一：
+
+- TLB 中的 `MAT=0` 没有稳定传到 `mmu_inst_mat`/
+  `irom_req_cacheable`，取指仍被错误地按 cacheable 请求处理；
+- `irom_req_cacheable=0` 已正确，但 ICache 的 uncached fetch、AXI 读地址/
+  返回数据或 killed/旧 refill response 的归属存在错误。
+
+RTL 静态检查已经确认 `cpu_top.sv` 使用：
+
+```systemverilog
+assign irom_req_cacheable = mmu_inst_mat == 2'd1;
+```
+
+因此下一次仿真不要继续更换 initrd、DDR 镜像或只增加 CACOP。应在冷启动后
+第一次 `ls` 的 `PC=0x10002ce4`（不同构建可能落在邻近地址）抓取：
+
+```text
+TLBELO.MAT
+mmu_inst_mat
+irom_req_cacheable
+irom_req_addr / AXI ARADDR
+ARVALID / ARREADY
+RVALID / RREADY / RDATA / RLAST / RRESP
+ICache refill owner、killed 标记、line address 和写入数据
+```
+
+判定方法：
+
+- `TLBELO.MAT=0` 但 `mmu_inst_mat` 或 `irom_req_cacheable` 非 0：查 TLB/MMU
+  属性选择、奇偶页选择及流水保持；
+- 三者均为 0，但返回到前端的指令仍错：查 ICache uncached 状态机、AXI
+  request/response 关联和旧 refill 污染；
+- AXI `RDATA` 已错：再向下追 DDR 地址映射和读响应；
+- AXI `RDATA` 正确而送入译码的指令错：问题已固定在 ICache/取指返回路径。
+
+这组结果不证明 DDR 完全无问题，但已证明内核、initrd、shell、第二次用户
+exec 和普通数据读取可工作；当前不应再把“镜像损坏”列为第一嫌疑。仓库中
+可直接复现的两个 ELF 及完整命令见 `artifacts/ucore/README.md`。
+
 ## WB repair 修复版 Linux/a4f 复测（2026-08-19）
 
 使用同一 `a140b4a`/core `6e5d375` bitstream，冷复位后按以下顺序启动：
