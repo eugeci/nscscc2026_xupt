@@ -9,6 +9,8 @@
 #include <sys/mount.h>
 #include <unistd.h>
 
+#include "pid1_supervisor.h"
+
 struct fixture {
 	const char *name;
 	const char *input_path;
@@ -371,7 +373,7 @@ static void timeout_reset_recovery(struct xnpu_device *device,
 	printf("XNPU_STAGE5_RECOVERY_PASS reset_reload=ok\n");
 }
 
-int main(void)
+static int run_smoke(void)
 {
 	struct xnpu_package facenet;
 	struct xnpu_device device;
@@ -429,4 +431,9 @@ int main(void)
 	xnpu_device_close(&device);
 	finish_forever();
 	return 0;
+}
+
+int main(void)
+{
+	return xnpu_pid1_supervise(run_smoke);
 }

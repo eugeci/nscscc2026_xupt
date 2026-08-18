@@ -66,9 +66,13 @@ bytes=16 checksum=0x685184b3 bbox=58,132,81,104,137 perf_cycle=734915
 XNPU_STAGE4_PASS
 ```
 
-After printing the marker, `/init` sleeps forever so the kernel does not panic
-from an init-process exit.  End the Verilator process after capturing the
-marker; the resulting termination status is not an inference failure.
+When launched as `/init`, the smoke binary first becomes a PID 1 supervisor
+and runs the actual test in a child process.  PID 1 reaps children and remains
+alive even if the smoke program exits or is killed, so a userspace test
+failure is reported without turning into Linux's `Attempted to kill init!`
+panic.  After printing the pass marker, the smoke child also sleeps forever.
+End the Verilator process after capturing the marker; the resulting
+termination status is not an inference failure.
 
 ## OpenLA500 RTL simulation
 

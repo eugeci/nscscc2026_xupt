@@ -8,6 +8,8 @@
 #include <sys/mount.h>
 #include <unistd.h>
 
+#include "pid1_supervisor.h"
+
 #define EXPECTED_CHECKSUM 0x685184b3U
 
 static const uint8_t expected_bbox[5] = { 58, 132, 81, 104, 137 };
@@ -26,7 +28,7 @@ static void fail(const char *operation, int result)
 	finish_forever();
 }
 
-int main(void)
+static int run_smoke(void)
 {
 	struct xnpu_result_v2 inference;
 	struct xnpu_package package;
@@ -95,4 +97,9 @@ int main(void)
 	xnpu_package_close(&package);
 	finish_forever();
 	return 0;
+}
+
+int main(void)
+{
+	return xnpu_pid1_supervise(run_smoke);
 }

@@ -11,6 +11,7 @@
 
 #include <linux/xnpu.h>
 #include "npu_golden_input.h"
+#include "pid1_supervisor.h"
 
 #define FACENET_NUM_LAYERS 10U
 #define FACENET_PARAMETER_BYTES 84392U
@@ -247,7 +248,7 @@ static void run_dma_smoke(int fd, const struct xnpu_info *info)
 	}
 }
 
-int main(void)
+static int run_smoke(void)
 {
 	struct xnpu_caps caps;
 	struct xnpu_info info;
@@ -291,4 +292,9 @@ int main(void)
 	close(fd);
 	finish_forever();
 	return 0;
+}
+
+int main(void)
+{
+	return xnpu_pid1_supervise(run_smoke);
 }

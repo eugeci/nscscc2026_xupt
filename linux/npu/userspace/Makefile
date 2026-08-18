@@ -38,11 +38,13 @@ $(BUILD_DIR)/xnpu-regress: xnpu_regress.c $(BUILD_DIR)/libxnpu.a
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(BUILD_DIR)/libxnpu.a \
 		$(LDFLAGS) -o $@
 
-$(BUILD_DIR)/xnpu-stage4-smoke: xnpu_stage4_smoke.c $(BUILD_DIR)/libxnpu.a
+$(BUILD_DIR)/xnpu-stage4-smoke: xnpu_stage4_smoke.c pid1_supervisor.h \
+		$(BUILD_DIR)/libxnpu.a
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(BUILD_DIR)/libxnpu.a \
 		$(LDFLAGS) -o $@
 
-$(BUILD_DIR)/xnpu-stage5-smoke: xnpu_stage5_smoke.c $(BUILD_DIR)/libxnpu.a
+$(BUILD_DIR)/xnpu-stage5-smoke: xnpu_stage5_smoke.c pid1_supervisor.h \
+		$(BUILD_DIR)/libxnpu.a
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(BUILD_DIR)/libxnpu.a \
 		$(LDFLAGS) -o $@
 
