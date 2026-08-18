@@ -315,3 +315,125 @@ AXI interconnect/MIG 入口的逐 beat `WSTRB`、W 数据，以及 MIG 返回的
 异常，定位 clock converter 或互连；若 MIG 入口写事务完全正确但仍读零，
 再转查 MIG/DDR 地址与写可见性。若 R 正确而 ERTN GPR 为零，问题在寄存器
 恢复；若 ERTN GPR 正确而 kernel 参数为零，再调查 ERTN/流水线重定向边界。
+
+## 2026-08-18 无探针分层诊断结果
+
+为避免只依赖 VIO 单点采样，新增了 PMON 可装载的裸机程序
+`chiplab/software/examples/cache_ddr_diag`。程序在与故障地址相同的物理地址
+`0x070d0b60` 上依次验证：
+
+| 阶段 | 操作 | 板上结果 |
+| --- | --- | --- |
+| A | uncached 字/字节/半字读写及 `WSTRB` | PASS |
+| D | cache refill、store hit、load hit | PASS |
+| B | hit CACOP writeback+invalidate | PASS |
+| C | 同 set 冲突替换触发 dirty victim writeback | PASS |
+
+板上完整终态为：
+
+```text
+DONE pass=0xff fail=0x00 (PASS)
+```
+
+其中阶段 B、C 写回后的值均能立即从 DMW1 uncached 别名读回。该结果证明当前
+bitstream 上 CPU、D-cache、AXI、clock converter、interconnect、MIG 和 DDR
+能够在故障地址完成普通及 dirty-line 写回事务。因此此前 PMON 固定帧“源端
+写完整、随后读零”不是这一地址上普遍存在的 DDR 写不可见问题，更可能依赖
+PMON `go` 的特定 cache/上下文状态或交接时序。
+
+为了让裸机 ELF 可由 PMON 正确装载，BSP 增加了两个受构建参数控制的兼容
+处理：链接区域可覆盖到 PMON 接受的 `0xa0100000/0xa0180000`；定义
+`pmon_elf=1` 时不重复执行 raw-bin 的 `.data` 搬运，也不覆盖 PMON 已配置的
+UART。默认构建仍保持历史 `0x1c000000/0x1c080000` 布局和原启动行为。
+
+另以 Vivado 2023.2/XSim 直接实例化 Loongson `system_run` 使用的
+`axi_clock_converter_0` 和 `axi_interconnect_0`，在三个异步时钟及通道
+backpressure 下回放板上观测到的 `AW=0x070d0b60`、`AWLEN=7`、ID 2、8 个
+full-strobe beat，再以 ID 1 读回前四个 word。地址、ID、burst、数据、
+`WSTRB`、`WLAST` 与响应在 clock converter 后和 MIG 侧均通过检查：
+
+```text
+[PASS] Loongson Xilinx AXI CDC/interconnect PMON burst test
+```
+
+这进一步排除了当前 IP 配置下可稳定复现的协议转换或数据丢失。Xilinx
+behavioral FIFO 模型不模拟同步器延迟，因此该结果不能替代实现后 CDC/时序
+检查；实现后 DCP 的静态追踪已同时确认 `WSTRB`、AWLEN、ID 和地址位宽从
+CPU 到 MIG 均保持连通，且本 bitstream 的时序报告无违例。
+
+### 第二主设备交叉可见性的边界
+
+当前 Loongson `system_run` 实现后网表中没有 JTAG AXI master；现有 VIO 只
+提供探针，不能主动读 DDR。通用 DMA 虽接在 DDR interconnect 的 S02 端，
+但它执行的是内存与 APB 外设之间的搬运，而 no-NAND APB 顶层把
+`dma_req_o` 固定为 0，不能直接用于 DDR-to-DDR 交叉读取。因此：
+
+- TFTP 装载已覆盖“以太网 DMA 写 DDR、CPU 读/执行”的方向；
+- “CPU 写 DDR、独立 master 读回”的方向在现有 bitstream 中缺少可用模块；
+- 若必须补齐该方向，应在后续调试位流中加入 JTAG AXI，或接通一个可控的
+  DMA requester，再读取裸机程序保存于 `0x070d0c00` 的结果块。
+
+这属于当前调试接口缺失，不是本轮测试失败；不要把只适用于
+`nscscc-team` 工程的 JTAG AXI 脚本用于 Loongson `system_run`。
+
+### 本轮 Linux 重测状态
+
+正确 bitstream 已再次下载，PMON、DDR 初始化和串口启动均正常。但下载后
+主机 `enp5s0` 从 `LOWER_UP` 变为持续 `NO-CARRIER`；即使固定为
+100 Mb/s 全双工仍无载波。PMON 侧 `dmfe0` 显示 `up running`，向主机发送
+9 个 ICMP 包全部超时。这一现象持续约两分钟，重新协商后恢复为
+100 Mb/s 全双工；它只阻塞了第一次 TFTP 尝试，不是处理器执行失败。
+
+链路恢复后，基础内核再次完整传输 12,459,288 bytes。直接执行 PMON `g`
+仍稳定复现原故障，56 路 VIO 与前一轮逐位相同：固定帧 store 和 8-beat AXI
+写回完整、B 响应 OKAY，但固定帧 restore load 和内核入口 `r4-r7` 全零，
+最终仍在 `fw_init_environ()` 以 `BADV=0x0d` 触发 TLB refill。
+
+### PMON 交接跳板实验
+
+新增 `chiplab/software/examples/linux_handoff_trampoline`，其 ELF 只有一个
+位于 `0xa0100000` 的 128-byte PT_LOAD 段。自动化流程先装载原始内核，再
+装载该跳板。PMON 仍执行原 `g` 流程，但跳板在进入 `0xa07b06e0` 前显式
+重建 `r4-r7`，并提供独立 argv。该方法未修改 bitstream 或内核正文。
+
+跳板生效后，Linux 从第一行版本信息开始稳定输出，完成了以下路径：
+
+- CPU 探测、页表和 MMU 切换；
+- I/D cache、异常和时钟中断；
+- 128 MiB 内存初始化、SLUB、RCU、VFS 和 initramfs 解包；
+- 串口切换、网络协议栈及大部分基础驱动初始化；
+- 释放 initmem，并成功执行到 `Run /bin/sh as init process`。
+
+VIO 同时确认内核入口参数为
+`2/0xa010002c/0xa4f00040/0`。因此当前处理器能够执行完整 Linux 内核启动，
+原先“没有任何 Linux 串口输出”的直接原因是 PMON `go` 恢复参数为零；它
+不是内核入口、通用 MMU、DDR 或 AXI 路径故障。跳板可作为继续验证 CPU 的
+临时启动方式，但不应替代对 PMON restore 兼容问题的最终修复。
+
+当前仍未达到 `/ #`。内置 rootfs 的 `/bin/sh` 和 `/sbin/init` 都指向一个
+2,300,452-byte、静态链接的 LoongArch BusyBox。启用
+`print-fatal-signals=1` 后确认其退出不是 CPU 将普通指令误解码为 break：
+
+```text
+potentially unexpected fatal signal 5
+PID: 1 Comm: sh
+epc: 0001045c
+ra : 00010448
+```
+
+BusyBox 反汇编中 `0x0001045c` 明确就是 `break 0`，位于 glibc 的 `abort()`
+状态机。无 `-i` 时也出现过正常 `exitcode=0`，说明当前首要问题是该旧 rootfs
+的启动/stdio/ABI 环境导致 BusyBox 主动 abort 或非交互退出，尚不能据此认定
+CPU 用户态取指错误。
+
+诊断还暴露了一个次要的软件兼容问题：打印 fatal signal 的寄存器后，内核
+在 `__show_regs.part.15+0x158` 进入 ECODE 18 的保留指令递归。该调试函数
+读取了当前实现不支持的处理器状态，异常处理又没有安全退出。下一步应：
+
+1. 先用只包含 `write`/`exit`/循环的最小静态用户程序替换 init，验证 PLV3、
+   syscall、用户页表与串口输出，不依赖 BusyBox/glibc；
+2. 在仿真中回放 BusyBox 入口到 `abort()` 的指令/系统调用序列，定位触发
+   abort 的软件条件；
+3. 修正或屏蔽 `__show_regs` 中不受支持的 CSR 读取，避免诊断自身递归；
+4. 最小用户态通过后再换用与该内核 ABI 匹配的 BusyBox/rootfs，以 `/ #`
+   作为最终通过判据。
