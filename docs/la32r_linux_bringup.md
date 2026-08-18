@@ -4,8 +4,8 @@
 
 - 主仓库基线：`origin/main` (`776d1e0`)
 - 主仓库 bring-up：`bringup/la32r-linux`（本文所在提交）
-- CPU：`core/feature/la32r-mmu` (`4aaa661`；相对位流基线只增加测试)
-- Chiplab bring-up：`b8fdccc`
+- CPU：`core/feature/la32r-mmu` (`e0cf1152e91c05d6b8b685cdb55c8733336e5a64`)
+- Chiplab bring-up：`90100f7`
 - Vivado：2023.2
 - CPU 时钟：33.333 MHz（系统时钟 100 MHz，DDR 参考时钟 200 MHz）
 
@@ -15,17 +15,17 @@
 
 ## 已通过检查
 
-- NSCSCC VCS RTL 回归：18/18
+- NSCSCC VCS RTL 回归：19/19
 - Vivado 综合、布局、布线和 bitstream：通过
-- 布线后 setup：WNS 0.724 ns，TNS 0 ns
-- 布线后 hold：WHS 0.053 ns，THS 0 ns
+- 布线后 setup：WNS 0.216 ns，TNS 0 ns
+- 布线后 hold：WHS 0.051 ns，THS 0 ns
 - 未布线网络：0
 
-当前产物：
+当前待下板复测产物：
 
 ```text
 chiplab/fpga/loongson/2023.2/system_run.runs/impl_1/soc_top.bit
-SHA256 5b9db1b0336982b0b4d8be83a85f65691abaa1748baa7357f1e612c490e4a9a3
+SHA256 67e1f0219565849e5026a2edabdab875ccebe8073b4f285042d57667920580b4
 
 chiplab/fpga/loongson/2023.2/system_run.runs/impl_1/soc_top.ltx
 SHA256 020bcf5a41611e4fad2d6c772cf8b4d8b2d116c2a3adb00eaf863408173ff62b
@@ -35,12 +35,17 @@ SHA256 d19514524a4e14a290df36f0c7bc16019fb564b75e3ed543c2a53af7edce985a
 ELF entry 0xa07b06e0
 ```
 
-上述 bitstream 于 2026-08-18 15:36 生成，包含最新 PRELD/IDLE 实现、
-D-cache 未初始化状态修复及 56 路 PMON/AXI 一致性探针；综合、布局、布线
-和 bitgen 均为 0 error。该文件已于 15:37 下载到板卡，并完成下述复测。
-位流和配套 LTX 已作为普通 Git blob 提交并推送至 Chiplab
-`bringup/la32r-linux` 的 `b8fdccc`，不依赖 Git LFS。远端对象重新读取后的
-大小为 9,730,756 bytes，SHA256 与上表一致。
+上述 bitstream 于 2026-08-18 18:31 生成，包含 CPU `e0cf1152` 的 MMU
+物理地址传递修复、AXI cache command 背压锁定修复，以及原有 56 路
+PMON/AXI 一致性探针；综合、布局、布线和 bitgen 均为 0 error。位流和
+配套 LTX 已作为普通 Git blob 提交并推送至 Chiplab
+`bringup/la32r-linux` 的 `90100f7`，不依赖 Git LFS。位流大小为
+9,730,756 bytes，SHA256 与上表一致。
+
+该新版已通过 19/19 VCS 回归和 Vivado 构建，但尚未重新下载到板卡。
+本文后续已有的 PMON/Linux 下板观察来自上一版已验证位流
+`5b9db1b0336982b0b4d8be83a85f65691abaa1748baa7357f1e612c490e4a9a3`
+（Chiplab `b8fdccc`）；复测新版时应另行追加结果，不能混用两版结论。
 
 ## 重建
 
