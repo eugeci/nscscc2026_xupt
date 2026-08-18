@@ -3,8 +3,9 @@
 ## 固定版本
 
 - 主仓库基线：`origin/main` (`776d1e0`)
-- CPU：`core/feature/la32r-mmu` (`715ee5d`)
-- Chiplab bring-up 配置：`7062aba`
+- 主仓库 bring-up：`bringup/la32r-linux` (`0bed310`，不含本文档提交)
+- CPU：`core/feature/la32r-mmu` (`b897a7d`)
+- Chiplab bring-up：`0ae86e2`（RTL/构建防护为 `a2531f4`）
 - Vivado：2023.2
 - CPU 时钟：33.333 MHz（系统时钟 100 MHz，DDR 参考时钟 200 MHz）
 
@@ -16,15 +17,18 @@
 
 - NSCSCC VCS RTL 回归：17/17
 - Vivado 综合、布局、布线和 bitstream：通过
-- 布线后 setup：WNS 0.978 ns，TNS 0 ns
-- 布线后 hold：WHS 0.052 ns，THS 0 ns
+- 布线后 setup：WNS 0.162 ns，TNS 0 ns
+- 布线后 hold：WHS 0.057 ns，THS 0 ns
 - 未布线网络：0
 
 当前产物：
 
 ```text
-chiplab/fpga/nscscc-team/run_vivado/project/loongson.runs/impl_1/soc_top.bit
-SHA256 7d1a784eb24ea347fcef24a8e2da810c5cc273ec35c73d3b45b0d5fad70a77a2
+chiplab/fpga/loongson/2023.2/system_run.runs/impl_1/soc_top.bit
+SHA256 768e78be353186eac6699a245f7e9d96384cac5ca6c2122eaf2fb9c1ae43b5b3
+
+chiplab/fpga/loongson/2023.2/system_run.runs/impl_1/soc_top.ltx
+SHA256 a975bfbe8167d16dbf34916dce8fc3393d593ba93b41d0d1681a89ee9c63ee32
 
 chiplab/software/examples/linux/vmlinux
 SHA256 d19514524a4e14a290df36f0c7bc16019fb564b75e3ed543c2a53af7edce985a
@@ -34,15 +38,16 @@ ELF entry 0xa07b06e0
 ## 重建
 
 ```bash
-cd chiplab/fpga/nscscc-team/run_vivado
-/home/eugeci/Xilinx/Vivado/2023.2/bin/vivado \
-  -mode batch -source create_project.tcl
-/home/eugeci/Xilinx/Vivado/2023.2/bin/vivado \
-  -mode batch -source bit.tcl
+cd chiplab/fpga/loongson/2023.2
+vivado -mode batch -source build_la32r_linux.tcl
 ```
 
-`bit.tcl` 使用 4 个并行 job。`create_project.tcl` 会清理 VIO 生成的仿真
-netlist，避免其在下一次递归扫描时被错误加入综合。
+运行前确认 `vivado -version` 为 2023.2。
+
+`build_la32r_linux.tcl` 会在构建前移除被直接加入工程的 VIO stub/sim
+netlist，并拒绝 core filelist 中的任何 VIO RTL 文件。当前构建日志报告
+`REMOVED_STALE_VIO_SOURCE_COUNT=0`，最终 LTX 中只有一个 18-probe VIO。
+不要使用同目录中 2026-08-17 生成的旧 `soc_top_post_route_opt.bit`。
 
 ## 首轮下板判据
 
