@@ -18,8 +18,8 @@
 
 	memory {
 		device_type = "memory";
-		/* 16 MiB keeps cycle-accurate RTL boot validation practical. */
-		reg = <0x00000000 0x01000000>;
+		/* Match the 128 MiB RAM exposed by the Chiplab Linux platform. */
+		reg = <0x00000000 0x08000000>;
 	};
 
 	cpuic: interrupt-controller {
