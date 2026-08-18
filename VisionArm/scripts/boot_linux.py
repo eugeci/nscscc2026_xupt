@@ -424,7 +424,12 @@ def main() -> int:
         else:
             log("已跳过 bitstream 下载；请确保开发板正在运行目标设计")
 
-        pmon_prompt = re.compile(rb"(?:PMON[^\r\n]{0,24}[>#]|PMON>)")
+        # Match only an idle prompt at the end of the received stream.  PMON
+        # may echo an input line as "PMON> load ..."; accepting the "PMON>"
+        # prefix of that echo makes the next command run while TFTP is active.
+        pmon_prompt = re.compile(
+            rb"(?:^|[\r\n])PMON[^\r\n>#]{0,24}[>#][ \t]*[\r\n]*\Z"
+        )
         serial.buffer.clear()
         log("等待 PMON 提示符")
         serial.wait_for([(pmon_prompt, "PMON prompt")], args.pmon_timeout, nudge=True)
