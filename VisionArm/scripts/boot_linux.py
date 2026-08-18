@@ -259,7 +259,13 @@ class SerialConsole:
         self.write(command.encode() + b"\r")
         output = self.wait_for([(prompt, "PMON prompt")], timeout)[1]
         lowered = output.lower()
-        if any(word in lowered for word in (b"exception", b"not found", b"timeout")):
+        if any(word in lowered for word in (
+            b"exception",
+            b"not found",
+            b"timeout",
+            b"invalid file format",
+            b"attempt to load",
+        )):
             fail(f"PMON 命令失败：{command}")
         return output
 
@@ -337,6 +343,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bit", type=Path, default=DEFAULT_BIT)
     parser.add_argument("--kernel", type=Path, default=DEFAULT_KERNEL)
     parser.add_argument("--tftp-name", default="vmlinux_visionarm_xnpu")
+    parser.add_argument(
+        "--handoff-elf",
+        type=Path,
+        help="内核装载后再装载的可选 ELF 跳板；用于隔离 PMON 交接问题",
+    )
+    parser.add_argument(
+        "--handoff-tftp-name",
+        default="linux_handoff_trampoline",
+        help="可选 ELF 跳板的 TFTP 文件名",
+    )
     parser.add_argument("--bootargs", default=DEFAULT_BOOTARGS)
     parser.add_argument("--vivado", help="Vivado 可执行文件路径")
     parser.add_argument("--skip-program", action="store_true", help="不下载 bitstream")
@@ -351,18 +367,33 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pmon-timeout", type=float, default=120)
     parser.add_argument("--load-timeout", type=float, default=300)
     parser.add_argument("--boot-timeout", type=float, default=180)
+    parser.add_argument(
+        "--success-pattern",
+        help="启动后以该正则表达式作为成功判据，适合 PMON 裸机 ELF",
+    )
     return parser.parse_args()
 
 
-def validate(args: argparse.Namespace) -> Tuple[Path, Path, str, Optional[str]]:
+def validate(
+    args: argparse.Namespace,
+) -> Tuple[Path, Path, Optional[Path], str, Optional[str]]:
     bit = args.bit.expanduser().resolve()
     kernel = args.kernel.expanduser().resolve()
     if not args.skip_program and not bit.is_file():
         fail(f"位流不存在：{bit}")
     if not kernel.is_file():
         fail(f"Linux 内核不存在：{kernel}")
+    handoff = (
+        args.handoff_elf.expanduser().resolve() if args.handoff_elf else None
+    )
+    if handoff is not None and not handoff.is_file():
+        fail(f"ELF 跳板不存在：{handoff}")
     if "/" in args.tftp_name or not args.tftp_name:
         fail("--tftp-name 必须是单个文件名")
+    if "/" in args.handoff_tftp_name or not args.handoff_tftp_name:
+        fail("--handoff-tftp-name 必须是单个文件名")
+    if handoff is not None and args.handoff_tftp_name == args.tftp_name:
+        fail("内核与 ELF 跳板的 TFTP 文件名不能相同")
     try:
         ipaddress.IPv4Address(args.host_ip)
         ipaddress.IPv4Address(args.board_ip)
@@ -378,7 +409,7 @@ def validate(args: argparse.Namespace) -> Tuple[Path, Path, str, Optional[str]]:
         fail("找不到 ip 命令；请安装 iproute2")
     vivado = None if args.skip_program else locate_vivado(args.vivado)
     serial_path = args.serial if args.check else detect_serial(args.serial)
-    return bit, kernel, serial_path or "(auto)", vivado
+    return bit, kernel, handoff, serial_path or "(auto)", vivado
 
 
 def main() -> int:
@@ -386,9 +417,11 @@ def main() -> int:
     tftp: Optional[ReadOnlyTftpServer] = None
     serial: Optional[SerialConsole] = None
     try:
-        bit, kernel, serial_path, vivado = validate(args)
+        bit, kernel, handoff, serial_path, vivado = validate(args)
         log(f"位流：{bit}")
         log(f"内核：{kernel}（TFTP /{args.tftp_name}）")
+        if handoff is not None:
+            log(f"交接跳板：{handoff}（TFTP /{args.handoff_tftp_name}）")
         log(f"网络：主机 {args.host_ip}/{args.prefix}，板卡 {args.board_ip}")
         log(f"串口：{serial_path}")
         if args.check:
@@ -443,17 +476,44 @@ def main() -> int:
             timeout=args.load_timeout,
         )
 
+        if handoff is not None:
+            if not args.external_tftp:
+                assert tftp is not None
+                tftp.stop()
+                tftp = ReadOnlyTftpServer(
+                    args.host_ip, args.handoff_tftp_name, handoff
+                )
+                tftp.start()
+            serial.command(
+                f"load tftp://{args.host_ip}/{args.handoff_tftp_name}",
+                pmon_prompt,
+                timeout=args.load_timeout,
+            )
+
         log(f"PMON> g {args.bootargs}")
         serial.buffer.clear()
         serial.write(f"g {args.bootargs}\r".encode())
-        event, _ = serial.wait_for(
-            [
-                (re.compile(rb"Please press Enter", re.I), "console activation"),
-                (re.compile(rb"(?:^|[\r\n])/ #\s*", re.M), "Linux shell"),
-                (re.compile(rb"Kernel panic", re.I), "kernel panic"),
-            ],
-            args.boot_timeout,
-        )
+        if args.success_pattern:
+            try:
+                success_pattern = re.compile(args.success_pattern.encode())
+            except re.error as exc:
+                fail(f"--success-pattern 正则表达式无效：{exc}")
+            event, _ = serial.wait_for(
+                [
+                    (success_pattern, "requested success pattern"),
+                    (re.compile(rb"Kernel panic", re.I), "kernel panic"),
+                ],
+                args.boot_timeout,
+            )
+        else:
+            event, _ = serial.wait_for(
+                [
+                    (re.compile(rb"Please press Enter", re.I), "console activation"),
+                    (re.compile(rb"(?:^|[\r\n])/ #\s*", re.M), "Linux shell"),
+                    (re.compile(rb"Kernel panic", re.I), "kernel panic"),
+                ],
+                args.boot_timeout,
+            )
         if event == "kernel panic":
             fail("Linux 启动过程中发生 Kernel panic")
         if event == "console activation":
@@ -463,6 +523,10 @@ def main() -> int:
                 [(re.compile(rb"(?:^|[\r\n])/ #\s*", re.M), "Linux shell")],
                 30,
             )
+
+        if args.success_pattern:
+            log(f"目标程序成功，已匹配：{args.success_pattern}")
+            return 0
 
         log("Linux 启动成功，已出现 / # 提示符")
         if not args.no_console:
