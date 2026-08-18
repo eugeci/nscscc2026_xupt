@@ -32,9 +32,14 @@ ls
 cat test.txt
 ```
 
-当前硬件的已知现象是：冷启动后第一次 `ls` 在用户态入口附近触发 RI 并杀死
-进程，第二次 `ls` 能列出目录，`cat test.txt` 正常。只有冷启动后第一次
-`ls` 也成功，才算硬件修复通过。
+在 `a140b4a` bitstream 上的已知现象是：冷启动后第一次 `ls` 在用户态入口
+附近触发 RI 并杀死进程，第二次 `ls` 能列出目录，`cat test.txt` 正常。
+
+在 IRQ 同步重构版 bitstream（Chiplab `6a931ee`，SHA256
+`334077203262288dfb2047083dcad81cbbf64fc71c8f9550d1eaa8d86aa530a4`）
+上，`uncached-pte` 镜像已经得到一次“冷启动后第一次 `ls` 成功，随后
+`cat test.txt` 成功”的板测结果。该结果尚需至少5次完全复位重复，并需再用
+普通 cached 基线镜像对照；单次成功不能证明 cache/MMU 根因已经闭环。
 
 要验证 MAT/uncached 取指链路，只把加载文件换成：
 

@@ -1337,3 +1337,110 @@ Chiplab 源码 `061ba0d11c93d7d2a2b15d7de67f170531a80fc6` 和 core
 - 若现象不变，立即观察 `rf_count/uart0_int/ESTAT.IS3/timer_irq_take`，优先
   区分 UART timeout/trigger 与 CPU 中断请求锁存问题，不再回退排查 DDR、
   initramfs 或用户态 exec。
+
+### IRQ 同步版板测：Linux 已进入 RX ISR，但短报文仍不返回（2026-08-19）
+
+使用上节 `6a931ee` 生成、SHA256 为
+`334077203262288dfb2047083dcad81cbbf64fc71c8f9550d1eaa8d86aa530a4`
+的 bitstream，保持 NAND-disabled 诊断内核和 `a4f` 跳板不变，Linux 再次稳定
+达到：
+
+```text
+LA32R Linux diagnostic shell
+type 'help' for commands
+/ #
+```
+
+本次与旧 bitstream 的差异是：连续发送较长字符串后，Linux 明确打印：
+
+```text
+ttyS ttyS0: 1 input overrun(s)
+```
+
+后续压力发送中 overrun 计数还出现 `2`、`4`，并能看到一部分接收字符被 TTY
+回显。但普通 `help`、单独 CR/LF 和短帧仍不能使 canonical `read()` 返回，
+诊断 shell 不执行命令。主机串口工具的 HEX 模式存在发送格式歧义，因此其
+界面显示不作为硬件字节值证据；内核自己的 overrun 日志和 TTY 部分回显才是
+本次结论依据。
+
+`ttyS0` 的 overrun 日志只能在 8250 ISR 读取 LSR 后产生。这证明新 bitstream
+上至少有一种 UART 中断（最可能是 receiver line status）已经沿以下路径到达
+Linux：
+
+```text
+uart0_int -> 两级同步 -> ESTAT.IS3 -> Linux IRQ18 -> 8250 ISR
+```
+
+因此“两级同步完全无效”和“IRQ编号错误”均可降级。当前故障变为：正常
+received-data/timeout 中断没有及时服务 RX FIFO；字符堆满后才靠 overrun 的
+line-status IRQ 进入驱动，导致开头字符丢失且短命令永远凑不成一行。
+
+#### UART RTL 独立 XSim 结果
+
+对 `6a931ee` 中原样的 `uart_regs/uart_receiver/uart_rfifo` 使用 Vivado 2023.2
+XSim 做了两层最小测试：
+
+1. 写入 `IER=0x05`，强制 `rf_count=1,counter_t=0`，得到
+   `ti_int_pnd=1,int_o=1,IIR=0x0c`；把 FIFO trigger 写为8并令
+   `rf_count=8`，得到 `rda_int_pnd=1,int_o=1,IIR=0x04`；
+2. 不强制内部状态，按 8N1/divisor 18 在 RX 引脚实际发送单字节 `0x68`；
+   字节进入 FIFO 后，四字符时间计数归零，得到：
+
+```text
+UART_SERIAL_TIMEOUT_PASS count=1 counter_t=0 iir=0x0c ier=5
+```
+
+这排除了“`uart_regs.v` 中 timeout pending/IIR 组合逻辑必然失效”这一简单
+根因。远端主仓库 `89339b8` 新固定的 Chiplab `731ebc2` 只增加 UART burst
+仿真和初始化 Verilator UART model，没有修改综合 RTL，也没有生成替代
+`6a931ee` bitstream，所以不能期待仅更新该 submodule 指针改变板上现象。
+
+#### 现在最短的硬件/内核定位顺序
+
+优先在同一时刻观察或由内核打印寄存器回读，不再盲改串口工具：
+
+1. Linux 8250 startup 写 IER 后立即读回，必须为 `0x05`（RDA+RLS）；若实际
+   只有 `0x04`，现有板测现象可被完整解释，继续查 MMIO byte write/APB
+   `PWDATA`、地址和 DLAB；
+2. 收到第一个字符后确认 `rf_count=1`、`counter_t` 从 `toc_value` 递减到0、
+   `ti_int_pnd=1`、IIR=`0x0c`；
+3. 依次比较 `uart0_int/int_sync_meta/int_sync_cpu/ESTAT.IS3`。若 UART 侧已
+   pending 而同步后不再变化，查 level 中断保持；
+4. 若 `ESTAT.IS3=1`，确认 `timer_irq_request/hold/take` 和 Linux IRQ18 计数
+   是否在 FIFO overrun 之前增长；
+5. 在 8250 ISR 记录每次 IIR、LSR 和实际读取 RBR 的字节数。若只见
+   IIR=`0x06`（RLS）而没有 `0x04/0x0c`，问题已经固定在 RDA/TI 生成或传播；
+6. 临时把 FIFO trigger 改为1。若单字符即可唤醒 shell，则 timeout 路径有
+   问题；若仍必须等到 overrun，优先核对 IER.RDA 和 CPU IRQ 重入。
+
+### 同一 IRQ 同步版上 uCore 首次 `ls` 单次通过
+
+同一 bitstream 随后加载了此前在 `a140b4a` 上稳定复现“第一次 `ls` RI、
+第二次成功”的 MAT=0 定位镜像：
+
+```text
+690734aacc893ba58a05c7ab1667db28d3630de4c6a53b950e050d32c960ec66
+ucore-kernel-initrd-polling-2way-memdiag-uncached-pte
+```
+
+PMON 将其识别为 ELF，入口 `0xa0000000`。虽然非 stripped ELF 因符号表空间
+不足打印了 `not enough memory ... table`，加载段和入口仍然有效，uCore 完成
+初始化进入 `$`。本次冷启动后的第一条 `ls` 直接成功列出 `cat/ls/sh/test.txt`，
+随后：
+
+```text
+$ cat test.txt
+hello World! Haha...
+$
+```
+
+这是相对旧 bitstream 的明确正向变化，但暂时只记录为“单次冷启动通过”。
+IRQ CDC 修改与 uCore 用户代码页取指没有直接因果关系，而重新实现 bitstream
+会改变布局布线、上电状态和时序裕量；不能因一次成功就宣布 ICache/MMU 根因
+已修复。闭环标准为：
+
+- 完全复位/重新加载后连续至少5轮，第一条 `ls` 均成功；
+- 同时复测普通 cached polling 2-way memdiag 镜像，而不只测 MAT=0 变体；
+- 每轮继续执行 `cat test.txt`，并记录 bitstream 与 uCore ELF SHA256；
+- 任一轮首错则保留当轮 `Code PA/PTE/cached/uncached`，继续按前文取指链路
+  波形定位。
