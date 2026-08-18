@@ -29,8 +29,8 @@ SoC、VIO、内核和构建组合。
 
 ## LA32R 当前组合
 
-- core：`e0cf1152e91c05d6b8b685cdb55c8733336e5a64`
-- chiplab：`90100f7`
+- core：`a9e13bfe93bd57278894f4f59cd1d731a4034cf0`
+- chiplab：`e3abbf8`
 - Vivado：2023.2
 - CPU 时钟：33.333 MHz
 - bitstream：
@@ -41,11 +41,11 @@ SoC、VIO、内核和构建组合。
 bitstream SHA256：
 
 ```text
-67e1f0219565849e5026a2edabdab875ccebe8073b4f285042d57667920580b4
+5d65c4dde048abdcc7a2053c4b4074610a153f83d47a924847d5168c94ed9fc9
 ```
 
 该版本已完成 19/19 VCS RTL 回归以及 Vivado 综合、布局、布线和 bitgen。
-最终 WNS 为 0.216 ns，WHS 为 0.051 ns，TNS/THS 和 routing error 均为
+最终 WNS 为 0.296 ns，WHS 为 0.051 ns，TNS/THS 和 routing error 均为
 0。该新版尚待重新下板复测。
 
 ## VIO 与生成文件规则
