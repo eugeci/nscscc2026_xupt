@@ -4,7 +4,10 @@
 
 - 主仓库基线：`origin/main` (`776d1e0`)
 - 主仓库 bring-up：`bringup/la32r-linux`（本文所在提交）
-- CPU：`core/feature/la32r-mmu` (`a9e13bfe93bd57278894f4f59cd1d731a4034cf0`)
+- 当前主仓库固定的 CPU：`core/feature/la32r-mmu`
+  (`f12ef387810b74dc30a3d70120e83780fe6fa172`，尚未下板)
+- 本文已下板 bitstream 使用的 CPU：
+  `a9e13bfe93bd57278894f4f59cd1d731a4034cf0`
 - Chiplab bring-up：`e3abbf8`
 - Vivado：2023.2
 - CPU 时钟：33.333 MHz（系统时钟 100 MHz，DDR 参考时钟 200 MHz）
@@ -21,7 +24,7 @@
 - 布线后 hold：WHS 0.051 ns，THS 0 ns
 - 未布线网络：0
 
-当前待下板复测产物：
+当前已下板复测产物：
 
 ```text
 chiplab/fpga/loongson/2023.2/system_run.runs/impl_1/soc_top.bit
@@ -42,10 +45,10 @@ bitgen 均为 0 error。位流和配套 LTX 已作为普通 Git blob 提交至 C
 `bringup/la32r-linux` 的 `e3abbf8`，不依赖 Git LFS。位流大小为
 9,730,756 bytes，SHA256 与上表一致。
 
-该新版已通过 19/19 VCS 回归和 Vivado 构建，但尚未重新下载到板卡。
-本文后续已有的 PMON/Linux 下板观察来自上一版已验证位流
+该新版已通过 19/19 VCS 回归、Vivado 构建及下文记录的 PMON/Linux 下板
+复测。本文中早于“ICache 握手修复版下板复测”的观察仍来自上一版位流
 `5b9db1b0336982b0b4d8be83a85f65691abaa1748baa7357f1e612c490e4a9a3`
-（Chiplab `b8fdccc`）；复测新版时应另行追加结果，不能混用两版结论。
+（Chiplab `b8fdccc`）；两版结论不能混用。
 
 ## 重建
 
@@ -675,3 +678,62 @@ d95cfb38bcea732cece52e6e66317c29e68848d7a34e0d25b093c2de6ba1438c  vmlinux_malloc
 
 这些诊断内核是从已跟踪的基础 `vmlinux` 自动派生的构建产物，不提交到
 Git；板测用 FPGA `soc_top.bit`/`soc_top.ltx` 则已按前述路径直接跟踪。
+
+## ICache 握手修复版下板复测（2026-08-18）
+
+本轮实际下载的是 Chiplab `e3abbf80e59e93f2234a7b4fd4d2ca2f9a41517f`
+生成的 bitstream，对应 CPU
+`a9e13bfe93bd57278894f4f59cd1d731a4034cf0`，SHA256 为：
+
+```text
+5d65c4dde048abdcc7a2053c4b4074610a153f83d47a924847d5168c94ed9fc9  soc_top.bit
+020bcf5a41611e4fad2d6c772cf8b4d8b2d116c2a3adb00eaf863408173ff62b  soc_top.ltx
+```
+
+Vivado 2023.2 下载成功后无需再次物理复位，串口立即出现完整 PMON 启动
+日志并进入提示符。此前旧镜像稳定出现的 `fetch_valid=1`、无 commit 的
+首次取指死锁未再复现，证明 `a9e13bf` 中“被取消的 ICache 请求仍保持到
+后端握手完成”的修复在板上生效。PMON 随后完成 128 MiB DDR 检测和
+`dmfe0` 初始化，TFTP 传输也无乱码或内存不足。
+
+本轮使用以下两个不提交到 Git 的测试文件：
+
+```text
+0b39006dbf4b5395f946507962249e137f57b9a5262ad63db32558d3b97cfa70  vmlinux_nand_disabled_stripped
+e1b582eaf65cb2688bedac5061c7fdf4ed9ad1b32d8ef1bb8bff7c6f8eb54100  linux_handoff_trampoline_a4f
+```
+
+先只装载精简内核并直接执行带 bootargs 的 PMON `g`，Linux 仍不能启动。
+VIO 保持与上一版相同的特征：PMON 上下文为
+`2/0xa4f00000/0xa4f00040/0`，固定帧 store 及 AXI 写数据正确，但 restore
+load 和内核入口 `r4-r7` 全零，首个内核异常仍以 `BADV=0x0d` 结束。因此
+本轮 ICache 修复没有同时修复 PMON `go` 的上下文恢复问题。
+
+重新下载同一 bitstream 清除失败现场后，板上依次执行：
+
+```text
+ifconfig dmfe0 192.168.1.101
+load tftp://192.168.1.100/vmlinux_nand_disabled_stripped
+load tftp://192.168.1.100/linux_handoff_trampoline_a4f
+g
+```
+
+精简内核入口为 `0xa07b06e0`，跳板入口为 `0xa0100000`。使用 `a4f` 跳板
+后，Linux 成功完成 CPU/MMU、I/D cache、128 MiB 内存、SLUB、RCU、VFS、
+时钟和网络协议栈初始化，最终稳定运行到：
+
+```text
+[    5.384000] Run /bin/sh as init process
+[    5.408000] potentially unexpected fatal signal 5.
+[    5.436000] epc   : 0001045c 0x1045c
+```
+
+`0x1045c` 仍是已知 BusyBox/glibc `abort()` 路径中的 `break 0`；随后的
+`__show_regs.part.15` 保留指令递归也是已知诊断兼容问题。故本轮结论为：
+
+- 最新 ICache 握手修复 bitstream 的 PMON 首次启动问题已通过板测；
+- Linux 内核主路径已再次通过，未发现 DDR 或 AXI 持续传输故障；
+- PMON 直接 `g` 的寄存器恢复问题仍存在，当前启动 Linux 必须保留 `a4f`
+  跳板；
+- 主仓库随后固定的 CPU `f12ef387`（MulDiv redirect 修复）未包含在本轮
+  bitstream 中，仍需单独重新生成并下板验证。
