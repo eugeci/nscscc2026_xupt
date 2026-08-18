@@ -3,9 +3,9 @@
 ## 固定版本
 
 - 主仓库基线：`origin/main` (`776d1e0`)
-- 主仓库 bring-up：`bringup/la32r-linux` (`6dcc98d`，不含本轮文档提交)
-- CPU：`core/feature/la32r-mmu` (`0659f88`)
-- Chiplab bring-up：`1a847e3`
+- 主仓库 bring-up：`bringup/la32r-linux` (`5f484fb`，不含本轮文档提交)
+- CPU：`core/feature/la32r-mmu` (`51f8816`)
+- Chiplab bring-up：`21dbd93`
 - Vivado：2023.2
 - CPU 时钟：33.333 MHz（系统时钟 100 MHz，DDR 参考时钟 200 MHz）
 
@@ -17,27 +17,27 @@
 
 - NSCSCC VCS RTL 回归：18/18
 - Vivado 综合、布局、布线和 bitstream：通过
-- 布线后 setup：WNS 0.180 ns，TNS 0 ns
-- 布线后 hold：WHS 0.052 ns，THS 0 ns
+- 布线后 setup：WNS 0.724 ns，TNS 0 ns
+- 布线后 hold：WHS 0.053 ns，THS 0 ns
 - 未布线网络：0
 
 当前产物：
 
 ```text
 chiplab/fpga/loongson/2023.2/system_run.runs/impl_1/soc_top.bit
-SHA256 24eb97b9364ef165100b7a7e355532915e5d83c02070c3632782ec6574834bce
+SHA256 5b9db1b0336982b0b4d8be83a85f65691abaa1748baa7357f1e612c490e4a9a3
 
 chiplab/fpga/loongson/2023.2/system_run.runs/impl_1/soc_top.ltx
-SHA256 3ba7346353be440d0bfe3a0d1e2ba82269e0f79ef30ce13137b5b61b86afa0e3
+SHA256 020bcf5a41611e4fad2d6c772cf8b4d8b2d116c2a3adb00eaf863408173ff62b
 
 chiplab/software/examples/linux/vmlinux
 SHA256 d19514524a4e14a290df36f0c7bc16019fb564b75e3ed543c2a53af7edce985a
 ELF entry 0xa07b06e0
 ```
 
-上述 bitstream 于 2026-08-18 14:41 生成，包含最新 PRELD/IDLE 实现、
-D-cache 未初始化状态修复及 51 路 PMON/AXI 一致性探针；综合、布局、布线
-和 bitgen 均为 0 error。截至本记录提交时，该文件尚未下载到板卡。
+上述 bitstream 于 2026-08-18 15:36 生成，包含最新 PRELD/IDLE 实现、
+D-cache 未初始化状态修复及 56 路 PMON/AXI 一致性探针；综合、布局、布线
+和 bitgen 均为 0 error。该文件已于 15:37 下载到板卡，并完成下述复测。
 
 ## 重建
 
@@ -50,7 +50,7 @@ vivado -mode batch -source build_la32r_linux.tcl
 
 `build_la32r_linux.tcl` 会在构建前移除被直接加入工程的 VIO stub/sim
 netlist，并拒绝 core filelist 中的任何 VIO RTL 文件。当前构建日志报告
-`REMOVED_STALE_VIO_SOURCE_COUNT=0`，最终 LTX 中只有一个 51-probe VIO。
+`REMOVED_STALE_VIO_SOURCE_COUNT=0`，最终 LTX 中只有一个 56-probe VIO。
 不要使用同目录中 2026-08-17 生成的旧 `soc_top_post_route_opt.bit`。
 
 ## 首轮下板判据
@@ -122,7 +122,30 @@ AXI R0..3                0/0/0/0
 `W0=0xa4f00000` 不能被组合解释成一次地址/数据错配：AXI 的 AW/W 是独立
 通道，且旧探针经一个寄存器状态位延迟启用，可能把相邻事务的 AW 与 W
 采到同一槽位。本轮新探针改为由 PMON `go` 特征组合直接启用，并分别使用
-读 ID 1、写 ID 2，将 AW/W 以 pending 索引配对后再记录。
+读 ID 1、写 ID 2，将一笔写事务从 AW 开始连续记录到 WLAST 和 B 响应。
+
+使用 `51f8816` CPU、`21dbd93` Chiplab 和 56 路探针位流再次上板，得到：
+
+```text
+pmon_axi_access       0x000ffff1
+AW0                   0x070d0b60
+AW1..3                0
+AWLEN/AWBURST         7/INCR
+W0..7                 2/a4f00000/a4f00040/0/0/0/0/0
+W seen/WLAST          ff/80
+B seen/BRESP          1/OKAY
+write_meta            0x00060107
+AR0..3                070d0b60/070d0b64/070d0b68/070d0b6c
+R0..3                 0/0/0/0
+```
+
+这确认四次架构级 cacheable store 落在同一条 32-byte cache line；随后发生
+的是一笔 `AWLEN=7` 的完整 dirty writeback，而不是四笔独立 AXI 写。8 个
+W beat 的数据、WLAST 位置和源端 B 响应都正确。因此当前 CPU/D-cache 已
+不再是“写命令或写数据丢失”的首要嫌疑点，故障边界进一步收敛到写掩码及
+写事务经过 clock converter、slave mux、AXI interconnect 和 MIG 后的内存
+可见性，或相同路径上的读返回。`BRESP=OKAY` 只能证明源端收到了成功响应，
+尚不能替代对 DDR 入口 `WSTRB` 和数据的实际观测。
 
 本次故障的最小可核验特征是：
 
@@ -138,6 +161,13 @@ AXI R0..3                0/0/0/0
 时，之后仍能得到正确 ELF 入口；第一次自动化流程的串口 `EIO` 则是把
 Digilent 下载口 `/dev/ttyUSB0` 当成串口造成的，实际串口是独立 FTDI
 `/dev/ttyUSB1`。后者修正后上述内核故障仍可稳定复现。
+
+启动脚本还修正了一处独立竞态：PMON 会把输入行回显为
+`PMON> load ...`，旧正则只要看到前缀 `PMON>` 就会误以为 TFTP 已结束，
+从而在传输中发送 `g` 并破坏命令。现在只接受位于接收缓冲区末尾、后面
+没有命令文本的空闲提示符。本轮复测中 12,459,288 bytes 传输完整结束、
+PMON 打印 `Entry address is a07b06e0` 后脚本才发送完整 bootargs，因此本文
+记录的 CPU 故障不再包含该自动化竞态。
 
 ### PMON 二进制结论
 
@@ -185,6 +215,9 @@ ECFG、ERA、PRMD、CRMD 和全部 GPR，再由 `ERTN` 进入内核。
 ### 无板阶段回归结果
 
 - VCS NSCSCC RTL 总回归：18/18 gate 通过。
+- D-cache 定向用例新增 PMON 同 cache line 的四次 cacheable store、冲突
+  替换产生的 8-beat dirty writeback，以及随后的四次 uncached load；逐
+  beat 检查 `WSTRB=0xf`、数据和 WLAST，已通过并提交为 `51f8816`。
 - 新增 CPU+D-cache PMON 固定帧用例
   `run_loongarch_uncached_handoff.sh`：从 `0x070d0b50` 开始，依次向偏移
   `16..28` 写入 `2/a4f00000/a4f00040/0`，再在 command、W、B、R 通道
@@ -262,18 +295,23 @@ AW/W/AR/R。状态位 13 表示已观察到 PMON 参数写入，位 14 表示运
 1. 下载本文件记录 SHA256 的新 bitstream。
 2. 重复 PMON TFTP 启动，不换内核、不改变 bootargs。
 3. 用 `check_linux_debug.tcl` 读取首异常、CSR、DMW 和入口参数。
-4. 正常交接的完整期望为：
+4. 当前 56 路探针的正常交接期望为：
 
 ```text
 pmon_fixed_access = 0x000001ff
-pmon_axi_access   = 0x0000ffff
-AW/AR 地址         = 070d0b60/070d0b64/070d0b68/070d0b6c
-W/R 数据           = 2/a4f00000/a4f00040/0
+pmon_axi_access   = 0x000ffff1
+AW0/AWLEN/AWBURST = 070d0b60/7/INCR
+W0..7             = 2/a4f00000/a4f00040/0/0/0/0/0
+W seen/WLAST/B    = ff/80/OKAY
+AR0..3            = 070d0b60/070d0b64/070d0b68/070d0b6c
+R0..3             = 2/a4f00000/a4f00040/0
 ERTN 前 r4-r7      = 2/a4f00000/a4f00040/0
 kernel r4-r7       = 2/a4f00000/a4f00040/0
 ```
 
-若 AW/W 不完整，问题在 uncached 写入或 AXI 握手；若写完整而 R 为零，问题
-在存储可见性或读通路；若 R 正确而 ERTN GPR 为零，问题在寄存器恢复；若
-ERTN GPR 正确而 kernel 参数为零，再调查 ERTN/流水线重定向边界。只有上述
-各层都正确后，才把排查点移动到内核 `_fw_arg0..3` 的保存与使用。
+本轮实际结果已经命中“源端写完整而 R 为零”。下一版探针应优先捕获源端及
+AXI interconnect/MIG 入口的逐 beat `WSTRB`、W 数据，以及 MIG 返回的 R
+数据：若 `WSTRB` 在源端即异常，回查 D-cache/AXI bridge；若源端正确而下游
+异常，定位 clock converter 或互连；若 MIG 入口写事务完全正确但仍读零，
+再转查 MIG/DDR 地址与写可见性。若 R 正确而 ERTN GPR 为零，问题在寄存器
+恢复；若 ERTN GPR 正确而 kernel 参数为零，再调查 ERTN/流水线重定向边界。
