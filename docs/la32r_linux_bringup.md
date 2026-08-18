@@ -8,7 +8,7 @@
   (`f12ef387810b74dc30a3d70120e83780fe6fa172`，尚未下板)
 - 本文已下板 bitstream 使用的 CPU：
   `a9e13bfe93bd57278894f4f59cd1d731a4034cf0`
-- Chiplab bring-up：`e3abbf8`
+- Chiplab bring-up：`2b6f74d`
 - Vivado：2023.2
 - CPU 时钟：33.333 MHz（系统时钟 100 MHz，DDR 参考时钟 200 MHz）
 
@@ -20,15 +20,15 @@
 
 - NSCSCC VCS RTL 回归：19/19
 - Vivado 综合、布局、布线和 bitstream：通过
-- 布线后 setup：WNS 0.296 ns，TNS 0 ns
-- 布线后 hold：WHS 0.051 ns，THS 0 ns
+- 布线后 setup：WNS 0.210 ns，TNS 0 ns
+- 布线后 hold：WHS 0.050 ns，THS 0 ns
 - 未布线网络：0
 
-当前已下板复测产物：
+当前待下板复测产物：
 
 ```text
 chiplab/fpga/loongson/2023.2/system_run.runs/impl_1/soc_top.bit
-SHA256 5d65c4dde048abdcc7a2053c4b4074610a153f83d47a924847d5168c94ed9fc9
+SHA256 814bbb4d9aa2076c05cd157fa1b881c7770813eb01ad1c0f2d552043d2b63fe9
 
 chiplab/fpga/loongson/2023.2/system_run.runs/impl_1/soc_top.ltx
 SHA256 020bcf5a41611e4fad2d6c772cf8b4d8b2d116c2a3adb00eaf863408173ff62b
@@ -38,17 +38,20 @@ SHA256 d19514524a4e14a290df36f0c7bc16019fb564b75e3ed543c2a53af7edce985a
 ELF entry 0xa07b06e0
 ```
 
-上述 bitstream 于 2026-08-18 19:27 生成，包含 CPU `a9e13bfe` 的 MMU
-物理地址传递、AXI cache command 背压锁定及被取消 ICache 请求的后端
-握手保持修复，以及原有 56 路 PMON/AXI 一致性探针；综合、布局、布线和
-bitgen 均为 0 error。位流和配套 LTX 已作为普通 Git blob 提交至 Chiplab
-`bringup/la32r-linux` 的 `e3abbf8`，不依赖 Git LFS。位流大小为
+上述 bitstream 于 2026-08-18 19:55 生成，包含 CPU `f12ef387` 的 MMU、
+Cache/AXI 背压修复及 MUL 误预测自重定向结果保持修复，以及原有 56 路
+PMON/AXI 一致性探针；综合、布局、布线和 bitgen 均为 0 error。位流和
+配套 LTX 已作为普通 Git blob 提交并推送至 Chiplab
+`bringup/la32r-linux` 的 `2b6f74d`，不依赖 Git LFS。位流大小为
 9,730,756 bytes，SHA256 与上表一致。
 
-该新版已通过 19/19 VCS 回归、Vivado 构建及下文记录的 PMON/Linux 下板
-复测。本文中早于“ICache 握手修复版下板复测”的观察仍来自上一版位流
+该新版已通过 19/19 VCS 回归和 Vivado 构建，但尚未重新下载到板卡。
+最新已完成下板复测的版本仍为 CPU `a9e13bfe`、Chiplab `e3abbf8`，其
+bitstream SHA256 为
+`5d65c4dde048abdcc7a2053c4b4074610a153f83d47a924847d5168c94ed9fc9`。
+本文中早于“ICache 握手修复版下板复测”的观察仍来自更早位流
 `5b9db1b0336982b0b4d8be83a85f65691abaa1748baa7357f1e612c490e4a9a3`
-（Chiplab `b8fdccc`）；两版结论不能混用。
+（Chiplab `b8fdccc`）；各版结论不能混用。
 
 ## 重建
 
