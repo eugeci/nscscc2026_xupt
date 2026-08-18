@@ -1,0 +1,39 @@
+--- soc_top.v
++++ soc_top.v
+@@ -93,6 +93,9 @@ module soc_top #(parameter SIMULATION=1'b0)
+ );
+ 
+ wire [31:0] num_data;
++wire [31:0] perf_instret_count_cpu;
++(* ASYNC_REG = "TRUE" *) reg [31:0] perf_instret_sync1;
++(* ASYNC_REG = "TRUE" *) reg [31:0] perf_instret_count;
+ wire resetn_vio;
+ wire resetn;
+ wire [7:0] switch_vio;
+@@ -117,7 +120,14 @@ vio_0 vio (
+         .probe_out1(switch_vio),
+         .probe_out2(btn_step_vio),
+         .probe_in0 (led),
+-        .probe_in1 (num_data),
++        .probe_in1 (perf_instret_count),
+         .probe_in2 (led_rg0 ),
+         .probe_in3 (led_rg1 )
+     );
++
++// The counter stops long before JTAG reads it. Two stages in the VIO clock
++// domain provide a stable, coherent sample without timing the CPU-to-VIO CDC.
++always @(posedge clk) begin
++    perf_instret_sync1 <= perf_instret_count_cpu;
++    perf_instret_count <= perf_instret_sync1;
++end
+@@ -610,7 +620,9 @@ core_top u_cpu(
+     .debug0_wb_pc       (debug_wb_pc        ),
+     .debug0_wb_rf_wen   (debug_wb_rf_wen    ),
+     .debug0_wb_rf_wnum  (debug_wb_rf_wnum   ),
+-    .debug0_wb_rf_wdata (debug_wb_rf_wdata  )
++    .debug0_wb_rf_wdata (debug_wb_rf_wdata  ),
++
++    .perf_instret_count (perf_instret_count_cpu)
+ );
+ 
+ axi3_to_axi4_bridge #(

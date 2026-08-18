@@ -1,4 +1,30 @@
 chiplab/software/examples/nscscc_perf/obj
+
+# Vivado local state and generated project outputs
+.Xil/
+*.cache/
+*.gen/
+*.hw/
+*.ip_user_files/
+*.runs/
+*.sim/
+
+# Vivado session and WebTalk files
+vivado*.jou
+vivado*.log
+vivado*.str
+vivado*.dmp
+webtalk*.jou
+webtalk*.log
+usage_statistics_webtalk.*
+
+# temp c outputs
+*.o
+
+# Local AI assistant settings
+.claude/settings.local.json
+
+# Simulation license/generated key
 ucli.key
 /vivado*.jou
 /vivado*.log

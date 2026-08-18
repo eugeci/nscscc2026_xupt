@@ -1,0 +1,42 @@
+diff --git a/mycpu_top.v b/mycpu_top.v
+index 71bbdc8..0a4c463 100644
+--- a/mycpu_top.v
++++ b/mycpu_top.v
+@@ -60,7 +60,9 @@ module core_top
+     output [ 3:0] debug0_wb_rf_wen,
+     output [ 4:0] debug0_wb_rf_wnum,
+     output [31:0] debug0_wb_rf_wdata,
+-    output [31:0] debug0_wb_inst
++    output [31:0] debug0_wb_inst,
++
++    output reg [31:0] perf_instret_count
+ );
+ reg         reset;
+ always @(posedge aclk) reset <= ~aresetn; 
+@@ -261,6 +263,26 @@ wire [ 4:0] preld_hint;
+ wire         preld_en;
+ 
+ wire         commit_inst;
++
++// Chiplab's benchmark interval is delimited by pairs of reads from the
++// SoC timer. Count only normally retired instructions inside those windows.
++// Multiple windows are accumulated for stringsearch, and VIO resets the
++// counter before every individual benchmark.
++wire perf_timer_read_fire = arvalid && arready
++                          && (araddr == 32'h1faf_e000);
++reg perf_window_open;
++always @(posedge aclk) begin
++    if (reset) begin
++        perf_window_open   <= 1'b0;
++        perf_instret_count <= 32'd0;
++    end else begin
++        if (perf_timer_read_fire)
++            perf_window_open <= ~perf_window_open;
++        if (perf_window_open && commit_inst)
++            perf_instret_count <= perf_instret_count + 32'd1;
++    end
++end
++
+ wire         br_inst;
+ wire         icache_miss;
+ wire         dcache_miss;
