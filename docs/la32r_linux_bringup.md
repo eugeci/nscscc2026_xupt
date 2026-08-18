@@ -1252,3 +1252,28 @@ UART_RX
 所有中断的 `timer_irq_ctrl` 按“请求独立锁存、提交边界消费”重新审查，避免
 锁存依赖 `id_valid` 或被无关 frontend flush 清掉。不能只靠改 IRQ 编号或
 重复更换 Linux 镜像来闭环。
+
+### 外部中断同步修复版 bitstream（2026-08-19）
+
+为验证上述第一嫌疑，使用主仓库 `254be433583b9cf91b72ad9dcf78b495e14b46e3`、
+Chiplab 源码 `061ba0d11c93d7d2a2b15d7de67f170531a80fc6` 和 core
+`6e5d3754f4292290e704c07c6096189dfd5a8f0d`，通过 Vivado 2023.2 重新完成
+综合、布局、布线和 bitstream 生成。该 Chiplab 版本已经在 `cpu_clk` 域对
+`int_async`（包括 `uart0_int`）加入 `int_sync_meta`、`int_sync_cpu` 两级
+同步，CPU 只接收同步后的 level 中断。
+
+生成文件已由 Chiplab `6a931ee` 跟踪：
+
+```text
+334077203262288dfb2047083dcad81cbbf64fc71c8f9550d1eaa8d86aa530a4  soc_top.bit
+50b216abd0ed79598c97f5bb4ba5691c539afc0e1a200b02f9d83da8ead388ad  soc_top.ltx
+```
+
+最终路由结果为 WNS `0.263 ns`、TNS `0 ns`、WHS `0.021 ns`、THS `0 ns`，
+无 failed、unrouted 或 partially routed net，所有用户时序约束均满足。该镜像
+尚未下板；应继续使用已稳定到达 `/ #` 的同一 Linux 诊断镜像做严格 A/B：
+
+- 若串口 RX 恢复，说明 uncore→CPU CDC 是本次问题的主因；
+- 若现象不变，立即观察 `rf_count/uart0_int/ESTAT.IS3/timer_irq_take`，优先
+  区分 UART timeout/trigger 与 CPU 中断请求锁存问题，不再回退排查 DDR、
+  initramfs 或用户态 exec。
