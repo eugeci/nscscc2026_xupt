@@ -1130,3 +1130,125 @@ printk: console [ttyS0] enabled
 
 当前板级里程碑应记录为“Linux 进入稳定用户态提示符，TX 正常，RX 未通”，
 而不是 Linux 启动失败。
+
+### Linux 串口 RX 静态巡查：外部中断链路为第一嫌疑（2026-08-19）
+
+诊断 shell 的主循环在打印一次 `/ # ` 后立即执行阻塞式
+`read(STDIN_FILENO, ...)`；板上只出现一个提示符，之后不重复刷屏。这说明
+`read(0)` 正在睡眠等待数据，而不是 fd 0 持续返回 EOF/EIO。结合用户态
+`write()` 和 ttyS0 TX 已通过，stdio/fd 绑定及 TTY 公共层不再是第一嫌疑。
+
+#### IRQ 编号和位映射已经核对一致
+
+Chiplab `a140b4ae8f4f0c0ca36de1f27f742564c1e1aa9a` 中：
+
+```verilog
+assign int_out = {npu_irq, dma_int, nand_int, spi_inta_o,
+                  uart0_int, mac_int};
+.intrpt({2'b0, int_out})
+```
+
+因此 `uart0_int -> intrpt[1]`。自研核将 `irq_pending[7:0]` 写入
+`CSR.ESTAT.IS[9:2]`，故 `intrpt[1] -> ESTAT.IS3`。Linux DTS 的 UART 节点
+使用 `interrupts = <3>`，`mach_irq_dispatch()` 也以 `pending & 0x8` 分发
+`LOONGSON_UART_IRQ`，最终日志显示 irq 18。四层编号完全一致，当前没有证据
+支持“DTS IRQ 写错一位”。
+
+#### 与 OpenLA500 的关键差异
+
+OpenLA500 与自研核都把外部 `interrupt[7:0]` 映射到
+`ESTAT.IS[9:2]`，所以映射本身不是二者差异。OpenLA500 的
+`has_int` 使用已经采样进 `csr_estat` 的 IS 位，并把中断作为普通异常随
+指令流水提交；自研核则有以下独立路径：
+
+```text
+异步 irq_pending
+  -> effective_is（直接使用原始 irq_pending）
+  -> timer_irq_request
+  -> timer_irq_hold
+  -> 等待 id_valid && pipeline_empty
+  -> timer_irq_take / EENTRY redirect
+```
+
+这条路径存在三个需要重点验证的风险：
+
+1. `uart0_int` 在约 33 MHz 的 `uncore_clk/aclk` 域产生，却直接接入
+   40 MHz `cpu_clk` 域；顶层没有两级同步器，而且
+   `effective_is` 直接组合使用原始异步输入；
+2. `timer_irq_hold` 只在 `timer_irq_request && id_valid` 时置位，并在任意
+   `frontend_flush` 时清零。必须验证分支 flush、ICache 等待和 IDLE 状态下
+   不会丢失或永久推迟外部中断；
+3. 完整 CPU 回归 `tb_loongarch_interrupt` 把 `irq_pending` 固定为
+   `8'd0`，只覆盖软件中断和核内定时器。`tb_loongarch_mmu_priv` 虽检查过
+   外部位映射，却没有覆盖流水线排空、异常入口、IDLE 唤醒、外设清 pending
+   和 ERTN。因此当前板上所需的外部中断端到端行为实际上没有回归保护。
+
+截至本次巡查，core `6e5d375` 之后远端最新的 `63041c7` 只包含 WB repair、
+ICache killed refill 和 AXI backpressure 等修复，没有外部中断相关修改，不能
+预期直接修复该 RX 现象。
+
+#### UART IP 的第二嫌疑：RX timeout 中断
+
+Linux 将该端口识别为 16550A，通常把 FIFO RX trigger 设置为 8 bytes。
+Chiplab UART IP 对 1--7 个字符不会立即产生 `rda_int`，而是依赖：
+
+```verilog
+ti_int = ier[RDA] && (counter_t == 0) && (rf_count != 0);
+```
+
+静态检查中 `counter_t` 会在收字节后装载约四个字符时间，并在 baud enable
+脉冲上递减；`ti_int_pnd` 和 `int_o` 也会保持到 RBR 被读，未发现必然失效的
+组合错误。因此它目前排在自研核外部中断控制之后，但仍需用 A/B 实验排除：
+
+- 在提示符后快速连续输入至少 16 个字符再回车；若此时突然收到输入，说明
+  阈值中断可用而 timeout 路径失效；
+- 临时把 8250 的 16550A RX trigger 从 8 改为 1。若 trigger=1 后可交互，
+  根因锁定在 UART timeout；若仍无输入，继续查 `uart0_int` 到 CPU 的路径。
+
+#### 最短仿真和下板观测方案
+
+不要先继续改 DDR/AXI。当前系统已经完成内核、initramfs、PLV3 ELF、syscall
+和串口 TX，RX 问题应按以下信号从外设向 CPU 单向定位：
+
+```text
+UART_RX
+ -> rf_push_pulse / rf_count / LSR.DR
+ -> IER.RDA / counter_t / rda_int_pnd / ti_int_pnd
+ -> uart0_int
+ -> intrpt[1]
+ -> ESTAT.IS3 / ECFG.LIE3 / CRMD.IE
+ -> timer_irq_request / timer_irq_hold / pipeline_empty
+ -> timer_irq_take / EENTRY
+ -> mach_irq_dispatch(IRQ18) / 8250 ISR / RBR read
+ -> TTY flip buffer / read(0) wakeup
+```
+
+按第一次出现分歧的位置判断：
+
+| 观测结果 | 结论 |
+| --- | --- |
+| 按键后 `rf_count` 仍为 0 | UART RX/波特率/引脚采样问题 |
+| `rf_count>0`，但 `uart0_int=0` | IER、FIFO trigger 或 timeout IP 问题 |
+| `uart0_int=1`，但 `ESTAT.IS3=0` | uncore→CPU CDC/外部中断采样问题 |
+| `ESTAT.IS3=1`，但 `timer_irq_request=0` | ECFG/CRMD/effective_is 逻辑问题 |
+| request/hold 为 1，但 `timer_irq_take` 不出现 | `timer_irq_ctrl` 的 ID/排空/flush 问题 |
+| take 已出现，但 Linux IRQ18 计数不增 | 异常入口、ERA/EENTRY 或 Linux dispatch 问题 |
+| IRQ18/8250 ISR 已进入但 RBR 不被读 | 8250 IIR/LSR 兼容问题 |
+| RBR 已读且 ISR 收到字符，`read(0)` 仍不醒 | 才转查 TTY/console fd/line discipline |
+
+建议先给 `tb_loongarch_interrupt` 增加真正的 `logic [7:0] irq_pending`，至少覆盖
+以下四种 case：
+
+1. 使能 `CRMD.IE` 和 `ECFG.LIE3` 后拉高 `irq_pending[1]`，检查
+   `ESTAT.IS3`、ECODE=INT、精确 ERA 和 EENTRY redirect；
+2. 在连续 taken-branch/frontend flush 中拉高并保持外部中断，证明不会饥饿；
+3. 在 IDLE 且下一条取指受 ICache/backpressure 阻塞时拉高中断，证明不依赖
+   偶然存在的 `id_valid` 才能唤醒；
+4. 模拟 ISR 读取 UART 后撤销 level pending，再执行 ERTN，检查只进入一次且
+   恢复 `CRMD.IE`，同时用不同相位扫 uncore→CPU 跨时钟输入。
+
+修复方向应先在仿真中验证：在 `cpu_clk` 域对外部中断做明确的两级 level
+同步，`effective_is` 只使用同步后的/CSR 已采样的值；同时把当前实质上处理
+所有中断的 `timer_irq_ctrl` 按“请求独立锁存、提交边界消费”重新审查，避免
+锁存依赖 `id_valid` 或被无关 frontend flush 清掉。不能只靠改 IRQ 编号或
+重复更换 Linux 镜像来闭环。
