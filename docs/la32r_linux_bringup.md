@@ -1444,3 +1444,20 @@ IRQ CDC 修改与 uCore 用户代码页取指没有直接因果关系，而重�
 - 每轮继续执行 `cat test.txt`，并记录 bitstream 与 uCore ELF SHA256；
 - 任一轮首错则保留当轮 `Code PA/PTE/cached/uncached`，继续按前文取指链路
   波形定位。
+
+### 最新 bringup 基线重建 bitstream（2026-08-19）
+
+为使位流与远端最新 bringup 基线一致，使用主仓库 `fed6285`（该提交仅增加
+uCore fallback 资料，RTL 子模块指针未变化）、Chiplab `731ebc2` 和 core
+`6e5d375`，在 Vivado 2023.2 / `xc7a200t-fbg676-2`
+上重新完成综合、布局、布线和 bitgen。生成的文件由 Chiplab 提交
+`1095444` 跟踪：
+
+```text
+soc_top.bit  SHA256 78d1b6c29fd0b1ba7775d14dc9f0aaddb3185d2988c3ff17b1a061c6bb35ba4d
+soc_top.ltx  SHA256 50b216abd0ed79598c97f5bb4ba5691c539afc0e1a200b02f9d83da8ead388ad
+```
+
+布线后 WNS `0.263 ns`、TNS `0 ns`、WHS `0.021 ns`、THS `0 ns`，无未布线
+网络。该位流尚未完成新一轮下板复测；下板时应使用本节 SHA256，并保持诊断
+内核、PMON 跳板和串口参数不变，与上一版 `334077203...` 做 A/B 对比。
