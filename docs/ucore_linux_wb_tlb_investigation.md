@@ -328,3 +328,24 @@ SecureCRT Send ASCII 的精确 A/B 进一步得到：`6c 73 0a` 只执行为 `s\
 和 `wb_load_data_ex`，并用 `abc\n`/` abc\n`、单字节 burst、随机 backpressure
 做定向仿真。验收必须是不加 padding 的 `ls\n` 冷复位后连续 20 次成功；前导
 空格只作为当前外设演示的临时 workaround。
+
+## 自动 Linux 外设正对照通过（2026-08-19）
+
+同一 IRQ hold 位流使用 `vmlinux_auto_visionarm_nand_disabled_stripped` 和入口
+匹配、带 `panic_on_oops=1` 的 `linux_handoff_trampoline_a4f_auto_panic1` 后，
+无需任何串口输入即完整得到 `AUTO_LS_PASS`、`CAM_MAGIC_PASS`、
+`CAM_ACTIVITY_PASS` 和 `VISIONARM_TEST_PASS`，PID 1 随后永久保活。自动内核
+SHA256 为 `4ed30a6e435e64b8dfba03213f33acd75402c83520c3f62738cfdd02b2873167`，
+跳板 SHA256 为 `e5e36bfdb929e86ac9d4b3edbd0ee9ef65668cad3b0a7697641cf4b251ce1ec8`。
+
+这建立了重要正对照：当前 CPU/位流并非无法执行 Linux 用户态，camera/LCD
+寄存器访问和 camera 活动计数也不是普遍失效。与此同时，`rxtrig1` 镜像仍曾
+随机停在 `Run /init`，并出现过内核态 Reserved instruction 递归；因此不能把
+剩余问题简化为串口工具或 initramfs，也不能由一次自动测试反推 DDR/ICache/
+AXI 全部正确。
+
+下一步必须做严格单变量实验：把现有自动 PID 1 注入 `rxtrig1` 内核，只替换
+initramfs，不改变内核 ELF/入口/位流。若连续冷启动通过，再收敛到 BusyBox
+init、shell 和 UART RX/IRQ；若仍停顿或 Oops，则直接抓 commit PC/instruction、
+ICache/AXI 返回、LSU/WB load tag 与 IRQ take/ERTN CSR。异常镜像一律加入
+`panic_on_oops=1` 并记录首次 `[#1]`，禁止再用递归刷屏后的寄存器判断根因。
