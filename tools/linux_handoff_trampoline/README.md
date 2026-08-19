@@ -12,11 +12,17 @@ make clean
 make ENTRY=0xa07c4d78 BOOTPARAM_ENV=0xa4f00040
 ```
 
+The default bootargs use `rdinit=/init`, allowing the initramfs startup script
+to mount devtmpfs before BusyBox opens its console.  Do not use
+`rdinit=/bin/sh` with an archive that does not already contain a usable
+`/dev/console`: the shell exits immediately and Linux panics because PID 1
+returned.
+
 Copy `obj/linux_handoff_trampoline.elf` to the TFTP root as
-`linux_handoff_trampoline_a4f_rxtrig1`, then boot:
+`linux_handoff_trampoline_a4f_rxtrig1_init`, then boot:
 
 ```text
 load tftp://192.168.1.100/vmlinux_nand_disabled_rxtrig1_stripped
-load tftp://192.168.1.100/linux_handoff_trampoline_a4f_rxtrig1
+load tftp://192.168.1.100/linux_handoff_trampoline_a4f_rxtrig1_init
 g
 ```

@@ -1328,7 +1328,13 @@ UART_RX
 首次板测错误复用了硬编码入口 `0xa07b06e0` 的旧 a4f 跳板，因而停在 PMON
 参数打印后、未进入新内核；这不是 trigger=1 结果。已增加可配置入口的
 `tools/linux_handoff_trampoline/`，并为新内核入口 `0xa07c4d78` 生成
-`linux_handoff_trampoline_a4f_rxtrig1`。后续 A/B 只认可专用跳板的结果。
+`linux_handoff_trampoline_a4f_rxtrig1_init`。后续 A/B 只认可该专用跳板的结果。
+
+入口修正后的首次运行已完整到达 `Run /bin/sh as init process`，但旧 bootargs
+直接使用 `rdinit=/bin/sh`，跳过了负责挂载 devtmpfs 的 `/init`，随后 shell
+因无 initial console 退出并触发 `Attempted to kill init`。因此再次将跳板改为
+`rdinit=/init`，最终板测文件为
+`linux_handoff_trampoline_a4f_rxtrig1_init`；前一次 panic 不计入 RX A/B。
 
 ### 外部中断同步修复版 bitstream（2026-08-19）
 
@@ -1478,3 +1484,68 @@ soc_top.ltx  SHA256 50b216abd0ed79598c97f5bb4ba5691c539afc0e1a200b02f9d83da8ead3
 布线后 WNS `0.263 ns`、TNS `0 ns`、WHS `0.021 ns`、THS `0 ns`，无未布线
 网络。该位流尚未完成新一轮下板复测；下板时应使用本节 SHA256，并保持诊断
 内核、PMON 跳板和串口参数不变，与上一版 `334077203...` 做 A/B 对比。
+
+### trigger=1 与 IRQ0 轮询版板测结论（2026-08-19）
+
+`5.14.0-rc2-uart-rxtrig1` 使用匹配入口 `0xa07c4d78`、并传递
+`rdinit=/init` 后已稳定进入 BusyBox `/ #`。但输入仍然出现丢字、乱码和
+overrun，故“16550A FIFO trigger=8 过高”这一单点假设已经排除；不能再把
+trigger=1 当作修复。
+
+随后构建 `5.14.0-rc2-uart-poll`：在 DTS 中仅删除 `0x1fe001e0` UART 的
+interrupt 属性，使 OF 8250 报告：
+
+```text
+1fe001e0.serial: ttyS0 at MMIO 0x1fe001e0 (irq = 0, ...) is a 16550A
+```
+
+这确认测试内核和 DTS 都已生效。板上随后从约 66 秒开始反复出现：
+
+```text
+irq 18: nobody cared (try booting with the "irqpoll" option)
+Disabling IRQ #18
+```
+
+后续同类报告位于约 `83.952/101.628/119.304/136.984 s`。即使内核打印
+`Disabling IRQ #18`，该 CPU IRQ 仍反复进入，必须重点核对 CPU interrupt
+chip 的 mask/ack、`ECFG.LIE3` 更新和同步后的 level 是否能撤销。
+
+但该轮询版还不能单独证明 RBR 数据通路有错：Linux 8250 的标准 IRQ0 模式
+仍会使能 UART IER，并由 `serial8250_timeout()` 读取 IIR/LSR/RBR；本 SoC 的
+UART 物理中断线并未因为 DTS 删除属性而断开，于是产生了无 handler 的 IRQ18
+风暴。下一版干净 A/B 必须二选一：
+
+1. 保留 UART IER/IIR 行为，但在 CPU interrupt controller 层显式 mask
+   hwirq2/IRQ18，由 8250 timer 单独清 UART pending；
+2. 将 UART IER 置零，并把轮询函数改成直接按 `LSR.DR` 读取 RBR、主动服务
+   TX，而不再依赖 IIR pending。
+
+本轮可复现构建信息：
+
+```text
+patch:   linux/patches/0004-la32r-uart0-use-8250-timer-polling-for-ab-test.patch
+release: 5.14.0-rc2-uart-poll
+entry:   0xa07c4d78
+size:    9854868 bytes
+sha256:  f8be53c2463790c24c358a8c4bd363a5d777e3a8fe6993c3e5a1fe53ffa6d663
+kernel:  vmlinux_nand_disabled_uartpoll_stripped
+handoff: linux_handoff_trampoline_a4f_uartpoll_init
+```
+
+#### core `63041c7` 是否覆盖本问题
+
+队友最新的 `63041c7 fix(pipeline): enforce WB repair token ownership` 以
+`6e5d375` 为父提交，把 `cpu_top.sv` 中已有的 WB repair hold 代码抽到
+`ex_wb_repair_hold.sv` 并新增定向 testbench。其时序优先级仍是：
+
+```text
+reset/flush -> clear
+advance     -> clear
+repair_valid && !hold_valid -> capture live WB data
+```
+
+该提交没有修改 UART IP、外部中断同步、CSR ECFG/ESTAT、中断 dispatch 或
+irqchip mask/ack，因此大概率不能解决当前重复 IRQ18；它对 WB repair 的回归
+覆盖有价值，但与本次 UART IRQ 根因是两个不同问题。并且当前主仓库
+`bringup/la32r-linux` 的 core gitlink 仍为 `6e5d375`，尚未固定 `63041c7`；即使
+重新使用当前主仓库生成 bitstream，也不会自动包含这份 core 提交。

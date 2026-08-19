@@ -246,7 +246,7 @@ Windows TFTP 文件名为 `vmlinux_nand_disabled_rxtrig1_stripped`，启动命�
 ```text
 ifconfig dmfe0 192.168.1.101
 load tftp://192.168.1.100/vmlinux_nand_disabled_rxtrig1_stripped
-load tftp://192.168.1.100/linux_handoff_trampoline_a4f_rxtrig1
+load tftp://192.168.1.100/linux_handoff_trampoline_a4f_rxtrig1_init
 g
 ```
 
@@ -255,8 +255,20 @@ g
 `tools/linux_handoff_trampoline/` 生成，反汇编确认 `r12=0xa07c4d78`：
 
 ```text
-ed5516081e87c4e36a69b81a7fb69f56523305bce11e35c8e8732a9679b3e18a  linux_handoff_trampoline_a4f_rxtrig1
+7b8d27da5aaa0dec0f596f70fa1b43c2dceb2ef7c0fd724ba3efde29e69b0910  linux_handoff_trampoline_a4f_rxtrig1_init
 ```
+
+第一次使用入口匹配的跳板时仍传了 `rdinit=/bin/sh`。内核已经完整启动，但
+initramfs 的 `/init` 没有执行，devtmpfs 未挂载，因而出现：
+
+```text
+Warning: unable to open an initial console.
+Run /bin/sh as init process
+Kernel panic - not syncing: Attempted to kill init! exitcode=0x00000000
+```
+
+这只证明入口和内核可执行，不是 RX A/B 结果。`_init` 跳板改用
+`rdinit=/init`，由启动脚本挂载 `/dev` 后再运行 BusyBox init。
 
 提示符出现后只发送一次 `ls` 和回车：
 
@@ -265,3 +277,30 @@ ed5516081e87c4e36a69b81a7fb69f56523305bce11e35c8e8732a9679b3e18a  linux_handoff_
   `timer_irq_hold/take` 和 Linux IRQ18；
 - 连提示符都到不了：先检查是否误用了跳往 `0xa07b06e0` 的旧跳板，再检查
   启动版本是否包含 `-uart-rxtrig1`；不要把旧 TFTP 文件算进 RX A/B。
+
+## trigger=1 与 IRQ0 轮询板测更新（2026-08-19）
+
+trigger=1 镜像已经用正确入口和 `rdinit=/init` 启动到 `/ #`，但 RX 仍乱码、
+丢字或 overrun，因此 FIFO trigger 阈值不是唯一根因。
+
+进一步应用：
+
+```text
+linux/patches/0004-la32r-uart0-use-8250-timer-polling-for-ab-test.patch
+```
+
+生成 `5.14.0-rc2-uart-poll`，SHA256 为
+`f8be53c2463790c24c358a8c4bd363a5d777e3a8fe6993c3e5a1fe53ffa6d663`。
+Linux 明确报告 UART 为 `irq = 0`，随后 IRQ18 却持续触发 `nobody cared`，并在
+每次打印 `Disabling IRQ #18` 后继续复发。这证明 DTS/8250 注册已切换，但原始
+UART IRQ level 仍进入 CPU，且通用屏蔽路径没有让它永久安静。
+
+该结果同时暴露了第一次轮询补丁的限制：标准 8250 no-IRQ timer 仍依赖使能
+IER 后读取 IIR，删除 DTS interrupt 并不会物理切断 SoC 的 UART IRQ。故当前
+日志强烈要求检查 IRQ18 的 source-clear 与 irqchip mask/ack，但尚不能把
+“轮询也失败”解释成 RBR/MMIO 数据路径失败。干净软件旁路必须显式 mask CPU
+hwirq2，或在 IER=0 时直接轮询 LSR/RBR。
+
+远端 core `63041c7` 只把 `6e5d375` 已有的 WB repair 保持器独立成模块并增加
+测试，capture/clear 优先级未改变，且没有触及 UART/IRQ/CSR/irqchip。它不会
+直接解决反复 IRQ18；当前 bringup 主仓库的 core 指针也仍停在 `6e5d375`。
