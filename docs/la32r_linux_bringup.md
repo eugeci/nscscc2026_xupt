@@ -1319,6 +1319,12 @@ UART_RX
 锁存依赖 `id_valid` 或被无关 frontend flush 清掉。不能只靠改 IRQ 编号或
 重复更换 Linux 镜像来闭环。
 
+2026-08-19 已完成 trigger=1 软件 A/B 镜像构建：Linux release 为
+`5.14.0-rc2-uart-rxtrig1`，SHA256 为
+`58779f0f98f3d23c4ac8d230dae78ea3bc5ee953bb807c40ffde5810d7b43d82`。
+补丁、启动命令和结果判定见 `docs/ucore_linux_wb_tlb_investigation.md` 的
+“8250 trigger=1 镜像已构建”一节。
+
 ### 外部中断同步修复版 bitstream（2026-08-19）
 
 为验证上述第一嫌疑，使用主仓库 `254be433583b9cf91b72ad9dcf78b495e14b46e3`、

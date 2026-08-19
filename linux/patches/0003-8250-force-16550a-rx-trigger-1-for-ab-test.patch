@@ -1,0 +1,21 @@
+From: LA32R bringup <bringup@local>
+Subject: [PATCH] tty: 8250: force 16550A RX trigger to one byte for A/B test
+
+The board receives characters into the UART FIFO but Linux reports input
+overruns and does not wake the interactive shell.  uCore works because its
+stdin path polls the RBR and does not depend on the receiver-timeout IRQ.
+
+Force the generic 16550A receive trigger from eight bytes to one byte.  This
+is a diagnostic workaround: if it restores Linux input, the remaining fault
+is in the UART RDA/timeout or external-interrupt path.  It is not intended as
+the final upstream setting for every 16550A.
+---
+ drivers/tty/serial/8250/8250_port.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/tty/serial/8250/8250_port.c b/drivers/tty/serial/8250/8250_port.c
+--- a/drivers/tty/serial/8250/8250_port.c
++++ b/drivers/tty/serial/8250/8250_port.c
+@@ -83 +83 @@ static const struct serial8250_config uart_config[] = {
+-		.fcr		= UART_FCR_ENABLE_FIFO | UART_FCR_R_TRIG_10,
++		.fcr		= UART_FCR_ENABLE_FIFO | UART_FCR_R_TRIG_00,

@@ -221,3 +221,39 @@ TLB 和异常路径不是“完全不可用”。但 Linux 对页表/ASID、I/D 
 
 最终通过标准不是“第二次 ls 成功”，而是冷复位后 uCore 第一次 exec 成功；
 Linux 则既要自动测试通过，也要在恢复 IRQ 方案后无 overrun 地交互输入。
+
+## 8250 trigger=1 镜像已构建（2026-08-19）
+
+已在独立 Ubuntu 源码副本中应用：
+
+```text
+linux/patches/0003-8250-force-16550a-rx-trigger-1-for-ab-test.patch
+```
+
+构建使用原板测环境的 LA32R GCC 8.3/Binutils 2.31.1、同一 NAND-disabled
+配置和 initramfs。验收结果：
+
+```text
+release: 5.14.0-rc2-uart-rxtrig1
+entry:   0xa07c4d78
+NAND:    ls1a_nand_init symbol absent
+size:    9854900 bytes
+sha256:  58779f0f98f3d23c4ac8d230dae78ea3bc5ee953bb807c40ffde5810d7b43d82
+```
+
+Windows TFTP 文件名为 `vmlinux_nand_disabled_rxtrig1_stripped`，启动命令：
+
+```text
+ifconfig dmfe0 192.168.1.101
+load tftp://192.168.1.100/vmlinux_nand_disabled_rxtrig1_stripped
+load tftp://192.168.1.100/linux_handoff_trampoline_a4f
+g
+```
+
+提示符出现后只发送一次 `ls` 和回车：
+
+- 能立即执行且无 overrun：UART RDA trigger=1 可用，优先修 UART timeout；
+- 仍 overrun/无响应：不是 FIFO 阈值过高这一单点，继续查 `uart0_int`、CDC、
+  `timer_irq_hold/take` 和 Linux IRQ18；
+- 连提示符都到不了：先检查启动版本是否包含 `-uart-rxtrig1`，不要把不同
+  initramfs/旧 TFTP 同名文件造成的启动差异算进 RX A/B。
