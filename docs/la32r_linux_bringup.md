@@ -1737,3 +1737,65 @@ ERA/PRMD、用户取指 PA/指令和首个 page fault。只有 exec 级失败时
 
 注意：演示版最后的 `/ #` 只是固定界面。TTY 仍可能回显键盘字符和 `^H`，但
 PID 1 故意不读取输入，也不会执行这些字符；不得把回显误记为交互 shell 通过。
+
+### RX-trigger1 原位 fork/COW/exec 三级探针全部通过（2026-08-19）
+
+为严格检验上一节提出的进程边界，新增 `fork_exec_probe.c`。构建时没有重新
+链接内核，而是由 `patch_stripped_vmlinux.py` 在已板测的 stripped ELF 中结构化
+定位 gzip/newc initramfs，只替换其原有预留区。基线与探针镜像为：
+
+```text
+base:   vmlinux_nand_disabled_rxtrig1_stripped
+entry:  0xa07c4d78
+size:   9854900 bytes
+sha256: 58779f0f98f3d23c4ac8d230dae78ea3bc5ee953bb807c40ffde5810d7b43d82
+
+probe:  vmlinux_rxtrig1_fork_exec_probe_stripped
+entry:  0xa07c4d78
+size:   9854900 bytes
+sha256: 8d99cb8f54c6a69a8aaf57bec29f897269c936bcdc88bccbb3d9738ba9653dc3
+```
+
+initramfs 位于文件偏移 `0x6fe338`，原预留区 2517328 bytes。工具已断言该
+区间之外所有字节与基线逐字节一致。第一版探针因当前 LA32R 用户态
+`sigaction()` 返回 `EINVAL` 而未进入测试；这只是探针的信号 ABI 依赖，最终版
+改用 `waitpid(WNOHANG) + nanosleep()`，不再依赖信号定时器。
+
+最终板测输出为：
+
+```text
+FORK_EXEC_PROBE_START pid=1
+STAGE1_FORK_EXIT_BEGIN
+STAGE1_FORK_EXIT_PASS child=26 exit=41
+STAGE2_CHILD_WRITE_COW_BEGIN
+STAGE2_CHILD_WRITE_COW_MARKER
+STAGE2_CHILD_WRITE_COW_PASS child=27 exit=42
+STAGE3_EXECVE_BEGIN path=/bin/sh
+STAGE3_EXEC_CHILD_START pid=28 ppid=1
+STAGE3_EXEC_MAP text=0x109f0 rodata=0x6af90 bss=0x8b48c stack=0x7f93e020
+STAGE3_EXEC_TEXT_RODATA_BSS_STACK_PASS
+STAGE3_EXEC_CHILD_EXIT
+STAGE3_EXECVE_PASS child=28 exit=43
+FORK_EXEC_PROBE_PASS
+FORK_EXEC_PROBE_DONE; PID 1 remains alive
+```
+
+该结果在同一个 `rxtrig1` 内核和新位流上证明：基本 `fork`、父子调度、子进程
+退出/父进程 `waitpid`、子进程栈与多页数据 COW、`execve` 装载新用户地址空间、
+新 text/rodata/BSS/stack 访问，以及 exec 子进程退出后切回 PID 1 全部可用。
+因此普通 shell 输入 `ls` 后无输出，不能再归因于通用 fork/COW/exec、所有
+ASID/TLB 切换、基本 ICache 取指或调度返回普遍失效。
+
+剩余边界应集中在完整 rootfs/BusyBox 特有路径：
+
+1. 保留原完整 initramfs，只把 PID 1 换成无输入 wrapper，自动
+   `fork()+execve("/bin/ls")` 并打印 wait status；这是下一项最高优先级单变量
+   A/B，可区分交互 TTY 与真实 BusyBox/动态装载故障。
+2. 核对 `/bin/ls` 是 BusyBox applet、独立静态 ELF 还是带 `PT_INTERP` 的动态
+   ELF；若为动态程序，分别记录 interpreter、共享库映射及首次用户 page fault。
+3. 若自动 `/bin/ls` 也挂住，在 `do_execveat_common()`、`load_elf_binary()`、
+   `start_thread()` 和首次 32 次用户异常/系统调用处记录 PID、PC、BadVA、ASID、
+   PTE/TLBELO、取指 PA 和指令，不再泛查 DDR/AXI。
+4. 若自动 `/bin/ls` 通过而交互命令挂住，则根因进一步锁定为 8250 RX/TTY
+   canonical read、IRQ18 服务或 shell job-control/等待路径；继续做无输入与有
+   输入的严格 A/B。

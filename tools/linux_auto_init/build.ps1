@@ -4,6 +4,7 @@ param(
     [string]$InitSource = "auto_init.c",
     [string]$OutputName = "vmlinux_auto_visionarm_nand_disabled_stripped",
     [string]$BuildDirectoryName = "build",
+    [switch]$PatchStrippedBase,
     [switch]$DemoLayout
 )
 
@@ -69,6 +70,17 @@ if ($DemoLayout) {
 }
 & $Python $InitramfsArguments
 if ($LASTEXITCODE -ne 0) { throw "initramfs build failed" }
+
+if ($PatchStrippedBase) {
+    & $Python (Join-Path $ScriptDirectory "patch_stripped_vmlinux.py") `
+        --base $BaseVmlinux --archive $Initramfs --output $Final
+    if ($LASTEXITCODE -ne 0) { throw "stripped vmlinux patch failed" }
+
+    & $Readelf -h -l $InitElf
+    Get-FileHash -Algorithm SHA256 $InitElf, $Initramfs, $Final
+    Get-Item $InitElf, $Initramfs, $Final | Select-Object FullName, Length
+    return
+}
 
 & $Python (Join-Path $ScriptDirectory "patch_vmlinux.py") `
     --nm $Nm --readelf $Readelf --base $BaseVmlinux `
