@@ -79,3 +79,20 @@ Consequently this first polling build is a useful interrupt-routing diagnostic,
 not yet a clean user-input workaround.  A corrected polling build must either
 mask the parent CPU interrupt while leaving the UART IER active, or set IER=0
 and poll LSR/RBR directly instead of relying on IIR.
+
+## IRQ-hold bitstream board result
+
+Chiplab commit `51b5ac5` publishes the board image containing core `d63527e`
+and Chiplab `f5ec5f1`:
+
+```text
+soc_top.bit sha256 256f5e62a917dcd1a028c2d31503c1eb4ac59a7b677e6ed6a942f5861297e691
+soc_top.ltx sha256 50b216abd0ed79598c97f5bb4ba5691c539afc0e1a200b02f9d83da8ead388ad
+```
+
+With the normal IRQ trigger-one kernel, Linux registers ttyS0 on IRQ18 and no
+longer reports `nobody cared`.  Exact SecureCRT ASCII transfers establish the
+remaining boundary: `6c 73 0a` executes as `s`, while `20 6c 73 0a` executes
+`ls` successfully.  The leading space is a temporary sacrificial-byte
+workaround; investigate first RBR/FIFO pop, APB/AXI read-response alignment,
+and first-MMIO-load ownership before declaring RX complete.

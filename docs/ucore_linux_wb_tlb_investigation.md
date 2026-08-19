@@ -313,3 +313,18 @@ hwirq2，或在 IER=0 时直接轮询 LSR/RBR。
 kernel，而应使用 `vmlinux_nand_disabled_rxtrig1_stripped`，确认日志为
 `ttyS0 ... irq = 18` 后测试短命令。主仓库需先同时固定这两个 SHA 并重新生成
 bitstream，不能用旧位流判断。
+
+## IRQ hold 位流后的首字节 A/B（2026-08-19）
+
+Chiplab `51b5ac5` 已发布同时包含 core `d63527e` 与 Chiplab `f5ec5f1` 的位流，
+BIT SHA256 为
+`256f5e62a917dcd1a028c2d31503c1eb4ac59a7b677e6ed6a942f5861297e691`。
+正常 IRQ 内核报告 `irq=18`，超过 70 秒无 `nobody cared`，证明 IRQ hold/CDC
+修复有效。
+
+SecureCRT Send ASCII 的精确 A/B 进一步得到：`6c 73 0a` 只执行为 `s\n`，而
+`20 6c 73 0a` 成功执行 `ls\n`。因此剩余故障已收敛为突发首字节/RBR 首读：
+优先逐拍比较 UART FIFO head/pop、APB `PRDATA`、AXI `RDATA`、LSU response tag
+和 `wb_load_data_ex`，并用 `abc\n`/` abc\n`、单字节 burst、随机 backpressure
+做定向仿真。验收必须是不加 padding 的 `ls\n` 冷复位后连续 20 次成功；前导
+空格只作为当前外设演示的临时 workaround。

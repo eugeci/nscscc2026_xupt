@@ -1579,3 +1579,61 @@ Linux 短命令不触发、直到 overrun 才偶尔进入 IRQ18 的现象高度�
 截至记录时，主仓库 `bringup/la32r-linux` 仍未固定 core `d63527e` 和 Chiplab
 `f5ec5f1`，也未发布由这两个提交共同生成的新 bitstream。只有新位流明确记录
 这两个 SHA 后，下板结果才能用于判定该修复是否成功。
+
+### IRQ hold 新位流板测与“突发首字节丢失”边界（2026-08-19）
+
+Chiplab 随后发布 `51b5ac5 build(fpga): refresh LA32R Linux image with IRQ
+hold fix`，明确记录：
+
+```text
+core:       d63527efed14c9c6fdf311e56dc3b6ac6f4c0313
+chiplab:    f5ec5f1c86190070cb17294507a93cfab60278ad
+soc_top.bit SHA256 256f5e62a917dcd1a028c2d31503c1eb4ac59a7b677e6ed6a942f5861297e691
+soc_top.ltx SHA256 50b216abd0ed79598c97f5bb4ba5691c539afc0e1a200b02f9d83da8ead388ad
+timing:     WNS 0.229 ns, TNS 0, WHS 0.032 ns, THS 0
+```
+
+使用该位流、`vmlinux_nand_disabled_rxtrig1_stripped` 和匹配的
+`linux_handoff_trampoline_a4f_rxtrig1_init` 后，Linux 报告 `ttyS0 irq=18`，
+稳定进入 `/ #`，运行超过旧轮询版首次报警的 66 秒后仍没有
+`irq 18: nobody cared`。因此 core 的 request hold 与 soc_top CDC 约束是有效
+修复，IRQ18 已能进入已注册的 8250 handler。
+
+为了绕过 SecureCRT 键盘/中文输入法，使用 Send ASCII 发送精确字节。两次
+A/B 为：
+
+```text
+发送 6c 73 0a       # "ls\n"
+板端执行 73 0a      # shell: s: not found
+
+发送 20 6c 73 0a    # " ls\n"
+板端执行 6c 73 0a   # ls 成功列出 bin/dev/etc/init/lib/.../vision
+```
+
+这证明换行、TTY canonical read、BusyBox shell 和 IRQ18 已经工作；剩余错误与
+突发中的**第一个接收字节**强相关。前导空格作为牺牲字节后，原命令完整执行。
+在更多序列验证前不能把它绝对写成“所有首字节必丢”，但已可把排查从 Linux
+启动/IRQ 保持收敛到 UART RBR 首读和 MMIO load 返回归属。
+
+#### 下一步集中检查点
+
+1. **UART FIFO/RBR：** 在空闲后注入 `20 6c 73 0a`，同时记录 `rf_count`、
+   read/write pointer、`LSR.DR`、IIR、RBR read-enable 和 FIFO pop。第一拍
+   RBR read 前 FIFO head 必须为 `0x20`，返回与 pop 必须严格同拍且只 pop 一次。
+2. **AXI/APB 返回对齐：** 对 `0x1fe001e0` 记录 AR/AXI-R 与
+   `PSEL/PENABLE/PREADY/PRDATA`。重点检查 ISR 按 IIR、LSR、RBR 访问时，第一笔
+   RBR 是否拿到前一笔寄存器的旧 `PRDATA`，以及 APB 地址/返回是否错后一拍。
+3. **CPU load 所有权：** 同拍比较 APB `PRDATA`、AXI `RDATA`、LSU response
+   tag、`wb_load_data_ex` 和最终写入 8250 `serial_in()` 的值。覆盖 EX stall、
+   frontend flush 与连续 MMIO load，确认首个设备 load 不会绑定到旧 WB token。
+4. **Linux 原始字节证据：** 在 8250 RX 路径增加小型内存 ring，只记录前 32
+   次 `{IIR,LSR,RBR}`，由延迟 work/timer 打印，禁止在 ISR 内同步 printk 干扰
+   时序。分别发送 `61 62 63 0a` 与 `20 61 62 63 0a`。
+5. **定向仿真：** UART 空闲至少 100 个周期后连续注入四字节，并随机化 APB/
+   AXI backpressure。断言第 N 次 RBR read 返回第 N 个 FIFO byte，且首字节、
+   单字节 burst、两个相邻 burst 都不丢、不重、不乱序。
+
+闭环标准：不用前导空格直接发送 `6c 73 0a`，冷复位后连续 20 次均执行 `ls`；
+再覆盖 `61 62 63 0a`、单字节命令和不同发送间隔，同时无 overrun、无
+`nobody cared`。在此之前，前导空格只能作为软件/演示 workaround，不能算
+UART RX 已完全修复。
