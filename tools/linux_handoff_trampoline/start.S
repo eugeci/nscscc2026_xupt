@@ -1,5 +1,5 @@
 #ifndef LINUX_BOOTARGS
-#define LINUX_BOOTARGS "console=ttyS0,115200 rdinit=/bin/sh print-fatal-signals=1 -- -i"
+#define LINUX_BOOTARGS "console=ttyS0,115200 rdinit=/init print-fatal-signals=1"
 #endif
 
 #ifndef LINUX_ENTRY

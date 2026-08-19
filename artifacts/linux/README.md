@@ -40,9 +40,42 @@ The image was copied to `D:\openla500_run_linux\tftp-root`. Its ELF entry is
 matching generated trampoline instead:
 
 ```text
-ed5516081e87c4e36a69b81a7fb69f56523305bce11e35c8e8732a9679b3e18a  linux_handoff_trampoline_a4f_rxtrig1
+7b8d27da5aaa0dec0f596f70fa1b43c2dceb2ef7c0fd724ba3efde29e69b0910  linux_handoff_trampoline_a4f_rxtrig1_init
 ```
+
+An earlier entry-matched trampoline used `rdinit=/bin/sh`; this reached Linux
+but printed `unable to open an initial console`, then the shell exited and
+caused `Attempted to kill init`.  That run only validates the kernel entry and
+must not be counted as an RX result.  The `_init` trampoline runs the archive's
+`/init` first so it can mount devtmpfs.
 
 If input starts working with the matching trampoline, the fault is narrowed
 to the UART receiver-timeout/trigger behavior rather than the Linux TTY, MMU,
 DDR, or initramfs.
+
+## UART timer-polling A/B image
+
+The follow-up image removes the interrupt property only from the board UART at
+`0x1fe001e0`, causing the OF 8250 driver to register it as IRQ 0 and select the
+existing `serial8250_timeout()` polling path.  It contains both diagnostic
+patches `0003` and `0004`:
+
+```text
+release: 5.14.0-rc2-uart-poll
+entry:   0xa07c4d78
+size:    9854868 bytes
+sha256:  f8be53c2463790c24c358a8c4bd363a5d777e3a8fe6993c3e5a1fe53ffa6d663
+file:    vmlinux_nand_disabled_uartpoll_stripped
+```
+
+Use `linux_handoff_trampoline_a4f_uartpoll_init`, which is the same verified
+`0xa07c4d78`/`rdinit=/init` handoff binary as the trigger-one test.
+
+Board testing verified `ttyS0 ... (irq = 0)`, but also exposed a repeated raw
+IRQ18 storm (`irq 18: nobody cared` / `Disabling IRQ #18`).  The standard 8250
+no-IRQ mode still enables UART IER bits so that its timer can service pending
+IIR causes; on this SoC the physical UART interrupt remains wired to CPU IRQ18.
+Consequently this first polling build is a useful interrupt-routing diagnostic,
+not yet a clean user-input workaround.  A corrected polling build must either
+mask the parent CPU interrupt while leaving the UART IER active, or set IER=0
+and poll LSR/RBR directly instead of relying on IIR.

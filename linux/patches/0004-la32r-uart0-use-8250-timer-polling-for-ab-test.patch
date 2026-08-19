@@ -1,0 +1,28 @@
+From: LA32R bringup <bringup@local>
+Subject: [PATCH] loongarch: dts: poll LA32R UART0 instead of using IRQ for A/B
+
+Linux reaches userspace on the FPGA but ttyS0 input is corrupted or lost,
+while the same UART works with uCore's polling input path.  Reducing the
+16550A RX FIFO trigger to one byte did not fix the failure, so bypass the
+external interrupt path entirely for the board UART at 0x1fe001e0.
+
+The 8250 OF driver treats a missing interrupt as IRQ 0 and its universal
+8250 layer then services the port with serial8250_timeout().  This is a
+diagnostic/software-workaround build: success implicates UART IRQ generation,
+clear/EOI, interrupt-controller routing, or CDC rather than the RBR data path.
+---
+ arch/loongarch/boot/dts/loongson/loongson32_ls.dts | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/arch/loongarch/boot/dts/loongson/loongson32_ls.dts b/arch/loongarch/boot/dts/loongson/loongson32_ls.dts
+--- a/arch/loongarch/boot/dts/loongson/loongson32_ls.dts
++++ b/arch/loongarch/boot/dts/loongson/loongson32_ls.dts
+@@ -52,8 +52,6 @@
+                         compatible = "ns16550a";
+                         reg = < 0x1fe001e0  0x10>;
+                         clock-frequency = <33000000>;
+-                        interrupt-parent = <&cpuic>;
+-                        interrupts = <2>;
+                         no-loopback-test;
+                 };
+

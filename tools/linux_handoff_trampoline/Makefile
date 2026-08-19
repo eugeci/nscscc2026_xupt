@@ -1,7 +1,7 @@
 CROSS_COMPILE ?= loongarch32r-linux-gnusf-
 ENTRY ?= 0xa07b06e0
 BOOTPARAM_ENV ?= 0xa4f00040
-BOOTARGS ?= console=ttyS0,115200 rdinit=/bin/sh print-fatal-signals=1 -- -i
+BOOTARGS ?= console=ttyS0,115200 rdinit=/init print-fatal-signals=1
 
 CC := $(CROSS_COMPILE)gcc
 READELF := $(CROSS_COMPILE)readelf
