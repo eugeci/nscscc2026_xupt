@@ -3,6 +3,7 @@
 镜像基于 `cyyself/ucore-loongarch32`。当前推荐使用带 initrd、polling 串口输入、
 双路 cache 维护和 RI 诊断的 ELF 镜像：
 
+- `ucore-kernel-initrd-visionarm-fallback.elf`：新增 `cam/lcdctl/vga`的保底镜像；
 - `ucore-kernel-initrd-polling-2way-memdiag.elf`：板测基线，可输入命令；
 - `ucore-kernel-initrd-polling-2way-memdiag-uncached-pte.elf`：把用户可执行页
   的 TLB MAT 设为 uncached 的定位镜像；
@@ -32,6 +33,23 @@ ls
 cat test.txt
 ```
 
+VisionArm 保底镜像的额外验证命令为：
+
+```text
+cam info
+cam status
+lcdctl bars
+lcdctl show
+cam on
+cam test
+vga terminal
+```
+
+该镜像要求 bitstream 实现 VisionArm 外设寄存器协议。当前队友已将
+自研核与这些外设合入同一 bitstream，上板时用 `cam info` 的
+`0x43414d31` magic 做第一项 ABI 验收。完整流程见
+`docs/ucore_linux_dual_track.md`。
+
 在 `a140b4a` bitstream 上的已知现象是：冷启动后第一次 `ls` 在用户态入口
 附近触发 RI 并杀死进程，第二次 `ls` 能列出目录，`cat test.txt` 正常。
 
@@ -60,6 +78,7 @@ g
 ## SHA256
 
 ```text
+8b4c6756cdc860f515797ffc2f1f6f519e398a8e796cb620ae3aa923b9e0d238  ucore-kernel-initrd-visionarm-fallback.elf
 c8e35b34d81ad5c6dee1cf03f70545795c7220db4f8277f0a5112e23311937b3  ucore-kernel-initrd-polling-2way-memdiag.elf
 690734aacc893ba58a05c7ab1667db28d3630de4c6a53b950e050d32c960ec66  ucore-kernel-initrd-polling-2way-memdiag-uncached-pte.elf
 c4a624c3a78911de4ab884adb930f8431aad8d83e9c46f25ca15d648db0c86c5  ucore-kernel-initrd-fence-fix-diag.bin
