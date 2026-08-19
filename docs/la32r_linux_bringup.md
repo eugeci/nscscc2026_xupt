@@ -1846,3 +1846,6 @@ UART RX 中断处理后没有正确撤销 IRQ18 level/pending，或交互 TTY/jo
 4. 最小下一镜像应在原 rootfs 中执行 `read line -> print marker -> /bin/ls /`。
    若 marker 后卡住，查 RX IRQ/调度；若 marker 与 `ls` 都通过，问题只剩 ash
    interactive job-control；若连 marker 都不出现，查 canonical read/TTY wakeup。
+
+针对当前 pinned Chiplab/core 的逐文件 P0/P1 可疑点、缺失仿真场景、必抓信号
+和断言，见 [`la32r_uart_interactive_hang_focus.md`](la32r_uart_interactive_hang_focus.md)。
