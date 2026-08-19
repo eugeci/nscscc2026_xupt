@@ -86,3 +86,24 @@ fits the existing reservation, keeps the ELF length unchanged, and asserts
 that all bytes outside the reservation are identical. No serial input is
 required. A complete pass ends with `FORK_EXEC_PROBE_PASS` and recurring
 `FORK_EXEC_PROBE_ALIVE` markers.
+
+## Original BusyBox/rootfs execution probe
+
+`replace_newc_entry.py` preserves the board-tested kernel and every entry in
+its original initramfs while replacing only one named newc entry. The BusyBox
+probe replaces `/init` with `busybox_exec_probe_init.sh`; it does not add a
+second libc or test executable. The script starts the original dynamic
+`/bin/sh`, then runs the original `/bin/echo` and `/bin/ls /` without reading
+the serial console.
+
+```powershell
+python .\tools\linux_auto_init\replace_newc_entry.py `
+  --base D:\openla500_run_linux\tftp-root\vmlinux_nand_disabled_rxtrig1_stripped `
+  --entry init `
+  --replacement .\tools\linux_auto_init\busybox_exec_probe_init.sh `
+  --output .\artifacts\linux\vmlinux_rxtrig1_busybox_exec_probe_stripped
+```
+
+`BB0_SHELL_START`, `BB1_ECHO_PASS`, a root directory listing and
+`BB2_LS_RC:0` together prove that the original dynamic loader, libc, BusyBox,
+rootfs, fork/exec/wait and `ls` directory traversal work without UART RX.

@@ -1799,3 +1799,50 @@ ASID/TLB 切换、基本 ICache 取指或调度返回普遍失效。
 4. 若自动 `/bin/ls` 通过而交互命令挂住，则根因进一步锁定为 8250 RX/TTY
    canonical read、IRQ18 服务或 shell job-control/等待路径；继续做无输入与有
    输入的严格 A/B。
+
+### 原完整 rootfs 自动 BusyBox `ls` 通过（2026-08-19）
+
+上述最高优先级 A/B 已完成。原 initramfs 共 438 个 newc 条目，其中
+`/bin/sh`、`/bin/echo`、`/bin/ls` 都是指向 1231972-byte `/bin/busybox` 的
+符号链接，并使用原 `/lib/ld.so.1`、`libc.so.6` 和 `libm.so.6`。构建工具只将
+151-byte `/init` 换成 162-byte `busybox_exec_probe_init.sh`；重新解析最终 archive
+并逐项检查后确认：除 `/init` 数据外，其余 437 个条目的名字、类型、权限、
+元数据和内容完全相同，内核 initramfs 预留区之外也逐字节相同。
+
+```text
+image:  vmlinux_rxtrig1_busybox_exec_probe_stripped
+entry:  0xa07c4d78
+size:   9854900 bytes
+sha256: ca24ed0a448f0bd104f513522f611271dc77655068b9fc21f03c4a5402d7d009
+```
+
+该脚本不读取 console，直接使用原动态 BusyBox shell 自动运行原 `/bin/echo` 和
+原 `/bin/ls /`。板测完整输出：
+
+```text
+BB0_SHELL_START
+BB1_ECHO_PASS
+bin  dev  etc  init  lib  media  proc  sbin  sys  tmp  usr  var  vision
+emb  lib32  linuxrc  mnt
+BB2_LS_RC:0
+```
+
+至此可以同时排除以下普遍性故障：原动态加载器/libc 无法运行、BusyBox 不能
+启动、完整 rootfs 内容损坏、`ls/getdents` 目录遍历失效、fork/exec/wait 普遍
+失效、UART TX 长输出失效，以及所有 DDR/TLB/ICache/AXI 访问整体不可靠。
+普通交互 shell 的 `ls` 卡住只在 UART 接收一行之后发生，故当前最高概率根因是
+UART RX 中断处理后没有正确撤销 IRQ18 level/pending，或交互 TTY/job-control
+特有的 signal、foreground process group、`tcsetpgrp()`/wait 路径。
+
+硬件/内核下一轮只检查以下窄路径：
+
+1. 发送 `6c 73 0a` 时逐拍记录 UART `rf_count`、RBR pop、IIR/LSR、IER、
+   `uart0_int`、同步后的 CPU interrupt 和 `ESTAT.IS3`；读完换行后必须在有限
+   周期内全部撤销，禁止 CPU 持续重新进入 IRQ18。
+2. 在 8250 handler 入口/出口各记录一次 `{IIR, LSR, RBR, handled}` 和 IRQ18
+   计数，确认一次三字节命令不会产生无法清除的 RLS/RDA/timeout 原因。
+3. 若 IRQ18 已稳定撤销，再记录交互 ash 的 `ioctl(TCGETS/TIOCSPGRP)`、
+   `SIGCHLD`、`wait4` 返回；与本次非交互自动脚本的 wait 路径逐项比较。
+4. 最小下一镜像应在原 rootfs 中执行 `read line -> print marker -> /bin/ls /`。
+   若 marker 后卡住，查 RX IRQ/调度；若 marker 与 `ls` 都通过，问题只剩 ash
+   interactive job-control；若连 marker 都不出现，查 canonical read/TTY wakeup。
