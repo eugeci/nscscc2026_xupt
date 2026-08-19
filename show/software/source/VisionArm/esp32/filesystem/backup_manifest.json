@@ -1,0 +1,46 @@
+[
+  {
+    "path": "/arm_reset.py",
+    "size": 5903
+  },
+  {
+    "path": "/boot.py",
+    "size": 139
+  },
+  {
+    "path": "/config.py",
+    "size": 828
+  },
+  {
+    "path": "/go_to_origin.py",
+    "size": 4467
+  },
+  {
+    "path": "/main.py",
+    "size": 1611
+  },
+  {
+    "path": "/motor_c.py",
+    "size": 7961
+  },
+  {
+    "path": "/uart_c.py",
+    "size": 1945
+  },
+  {
+    "path": "/udp_c.py",
+    "size": 9644
+  },
+  {
+    "path": "/固定点位抓取.py",
+    "size": 6635
+  },
+  {
+    "path": "/测试串口映射.py",
+    "size": 939
+  },
+  {
+    "path": "/限位器测试.py",
+    "size": 629
+  }
+]

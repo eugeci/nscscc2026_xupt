@@ -1,0 +1,219 @@
+#!/bin/sh
+
+# camctl - control and inspect the VisionArm OV5640 DDR video path.
+# Compatible with the BusyBox /bin/sh environment used by chiplab Linux.
+
+CAM_CTRL=0x1fd0e100
+CAM_STATUS=0x1fd0e104
+CAM_ACTIVITY=0x1fd0e108
+CAM_S2MM=0x1fd0e10c
+CAM_MM2S=0x1fd0e110
+CAM_FRAME0=0x1fd0e114
+CAM_FRAME1=0x1fd0e118
+CAM_OUTPUT_SIZE=0x1fd0e11c
+CAM_INPUT_SIZE=0x1fd0e120
+CAM_STRIDE=0x1fd0e124
+CAM_MAGIC=0x1fd0e13c
+
+usage()
+{
+    cat <<'EOF'
+Usage:
+  cam on
+  cam off
+  cam status
+  cam info
+  cam watch [samples]
+  cam test
+
+The camera is off after reset. `cam on` starts DMA and selects camera VGA;
+`cam off` stops DMA and returns VGA to the Linux terminal.
+EOF
+}
+
+read_reg()
+{
+    devmem "$1" 32
+}
+
+write_reg()
+{
+    devmem "$1" 32 "$2" >/dev/null
+}
+
+flag_value()
+{
+    value="$1"
+    bit="$2"
+    if [ $((value & (1 << bit))) -ne 0 ]; then
+        printf '%s' yes
+    else
+        printf '%s' no
+    fi
+}
+
+print_status()
+{
+    control_raw="$(read_reg "$CAM_CTRL")" || return 1
+    status_raw="$(read_reg "$CAM_STATUS")" || return 1
+    activity_raw="$(read_reg "$CAM_ACTIVITY")" || return 1
+    # The upper register bits contain debug state and may set bit 31.  BusyBox
+    # ash uses signed 32-bit arithmetic and rejects values such as 0xC53A78FB.
+    # Only bits 18:0 are status flags, so parse the low five hexadecimal digits.
+    status_value="$(printf '%s\n' "$status_raw" | sed 's/^0x.../0x/')"
+    status_value=$((status_value))
+
+    echo "Camera control : $control_raw"
+    echo "Camera status  : $status_raw"
+    echo "Video activity : $activity_raw"
+    echo "Sensor ID OK   : $(flag_value "$status_value" 0)"
+    echo "SCCB init done : $(flag_value "$status_value" 1)"
+    echo "SCCB error     : $(flag_value "$status_value" 2)"
+    echo "PCLK/VS/HREF   : $(flag_value "$status_value" 3)/$(flag_value "$status_value" 4)/$(flag_value "$status_value" 5)"
+    echo "DMA enabled    : $(flag_value "$status_value" 6)"
+    echo "VDMA init done : $(flag_value "$status_value" 7)"
+    echo "VDMA error     : $(flag_value "$status_value" 8)"
+    echo "FIFO full/ovf  : $(flag_value "$status_value" 9)/$(flag_value "$status_value" 10)"
+    echo "S2MM frame     : $(flag_value "$status_value" 11)"
+    echo "MM2S data/SOF  : $(flag_value "$status_value" 13)/$(flag_value "$status_value" 14)"
+    echo "VGA underflow  : $(flag_value "$status_value" 15) (sticky diagnostic)"
+    echo "Legacy SW gate: $(flag_value "$status_value" 16)"
+    echo "Software enable: $(flag_value "$status_value" 17)"
+    echo "VGA terminal   : $(flag_value "$status_value" 18)"
+}
+
+print_info()
+{
+    magic="$(read_reg "$CAM_MAGIC")" || return 1
+    frame0="$(read_reg "$CAM_FRAME0")" || return 1
+    frame1="$(read_reg "$CAM_FRAME1")" || return 1
+    output_size="$(read_reg "$CAM_OUTPUT_SIZE")" || return 1
+    input_size="$(read_reg "$CAM_INPUT_SIZE")" || return 1
+    stride="$(read_reg "$CAM_STRIDE")" || return 1
+    s2mm="$(read_reg "$CAM_S2MM")" || return 1
+    mm2s="$(read_reg "$CAM_MM2S")" || return 1
+
+    echo "VisionArm camera information"
+    echo "Version magic  : $magic (expected 0x43414D31 / CAM1)"
+    echo "Sensor input   : 320x240 RGB565 ($input_size)"
+    echo "DDR/VGA output : 640x480 RGB565 ($output_size)"
+    echo "Line stride    : 1280 bytes ($stride)"
+    echo "Frame buffer 0 : $frame0"
+    echo "Frame buffer 1 : $frame1"
+    echo "VDMA S2MM      : $s2mm"
+    echo "VDMA MM2S      : $mm2s"
+}
+
+camera_test()
+{
+    failures=0
+    magic="$(read_reg "$CAM_MAGIC")" || return 1
+    case "$magic" in
+        0x43414D31|0x43414d31)
+            echo "PASS: current CAM1 bitstream detected"
+            ;;
+        *)
+            echo "FAIL: camera version magic is $magic" >&2
+            failures=$((failures + 1))
+            ;;
+    esac
+
+    status_raw="$(read_reg "$CAM_STATUS")" || return 1
+    status_value="$(printf '%s\n' "$status_raw" | sed 's/^0x.../0x/')"
+    status_value=$((status_value))
+
+    if [ $((status_value & 0x3b)) -eq 59 ]; then
+        echo "PASS: OV5640 ID, SCCB and sensor clocks are present"
+    else
+        echo "FAIL: sensor status is $status_raw" >&2
+        failures=$((failures + 1))
+    fi
+
+    if [ $((status_value & (1 << 6))) -eq 0 ]; then
+        echo "FAIL: camera DMA is not effectively enabled" >&2
+        failures=$((failures + 1))
+    else
+        echo "PASS: camera DMA is enabled"
+    fi
+
+    first="$(read_reg "$CAM_ACTIVITY")" || return 1
+    usleep 500000
+    second="$(read_reg "$CAM_ACTIVITY")" || return 1
+    echo "Activity       : $first -> $second"
+    if [ $((second)) -gt $((first)) ]; then
+        echo "PASS: DDR video stream is active"
+    else
+        echo "FAIL: video activity counter did not increase" >&2
+        failures=$((failures + 1))
+    fi
+
+    if [ "$failures" -eq 0 ]; then
+        echo "CAMERA_TEST_PASS"
+        return 0
+    fi
+
+    echo "CAMERA_TEST_FAIL: $failures check(s) failed" >&2
+    return 1
+}
+
+command_name="$1"
+
+case "$command_name" in
+    on)
+        write_reg "$CAM_CTRL" 1 || exit 1
+        echo "camctl: camera DMA start requested"
+        usleep 2000000
+        status_raw="$(read_reg "$CAM_STATUS")" || exit 1
+        status_value=$((status_raw))
+        if [ $((status_value & (1 << 6))) -ne 0 ]; then
+            echo "camctl: camera DMA is running"
+        else
+            echo "camctl: DMA did not start; inspect cam status" >&2
+            exit 1
+        fi
+        ;;
+    off)
+        write_reg "$CAM_CTRL" 0 || exit 1
+        usleep 100000
+        echo "camctl: camera DMA stopped"
+        ;;
+    status)
+        print_status
+        ;;
+    info)
+        print_info
+        ;;
+    watch)
+        samples="${2:-0}"
+        case "$samples" in
+            ''|*[!0-9]*)
+                echo "camctl: samples must be a non-negative integer" >&2
+                exit 2
+                ;;
+        esac
+        count=0
+        echo "camctl: watching video activity; press Ctrl+C to stop"
+        while [ "$samples" -eq 0 ] || [ "$count" -lt "$samples" ]; do
+            status_raw="$(read_reg "$CAM_STATUS")" || exit 1
+            activity_raw="$(read_reg "$CAM_ACTIVITY")" || exit 1
+            echo "status=$status_raw activity=$activity_raw"
+            count=$((count + 1))
+            usleep 500000
+        done
+        ;;
+    test)
+        camera_test
+        ;;
+    help|--help|-h)
+        usage
+        ;;
+    '')
+        usage >&2
+        exit 2
+        ;;
+    *)
+        echo "camctl: unknown command: $*" >&2
+        usage >&2
+        exit 2
+        ;;
+esac

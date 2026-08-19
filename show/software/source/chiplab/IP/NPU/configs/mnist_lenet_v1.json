@@ -1,0 +1,37 @@
+{
+  "format_version": "npu_compile_config_v1",
+  "target": "mnist_lenet_v1",
+  "model": {
+    "name": "mnist_lenet",
+    "weights": "../../../../PPQ_Mnist/LeNet.pth",
+    "input_contract": "mnist_28x28_u8_first_784_frame_bytes",
+    "output_contract": "class10_u8_scores"
+  },
+  "dataset": {
+    "root": "../../../../PPQ_Mnist"
+  },
+  "quant": {
+    "calib_samples": 0,
+    "activation_percentile": 100.0,
+    "activation_margin": 1.10,
+    "demo_sample": "img7",
+    "device": "cpu"
+  },
+  "outputs": {
+    "params_hex": "params/mnist_lenet/npu_params.hex",
+    "quant_config": "params/mnist_lenet/quant_config.json",
+    "microcode_hex": "sim/microcode_mnist_lenet.hex",
+    "desc_hex": "scripts/mnist_lenet_desc.hex",
+    "desc_header": "models/descriptors/mnist_lenet_desc.h",
+    "demo_header": "models/fixtures/mnist_lenet_input.h",
+    "compile_manifest": "params/mnist_lenet/npu_compile_manifest.json",
+    "package": "models/packages/mnist_lenet_v1.xnpu"
+  },
+  "integration": {
+    "sync_sim_desc_hex": "sim/mnist_lenet_desc.hex"
+  },
+  "verify": {
+    "params": false,
+    "descriptors": true
+  }
+}

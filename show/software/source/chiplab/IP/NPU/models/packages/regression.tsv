@@ -1,0 +1,7 @@
+# XNPU regression manifest v1
+# package\tinput\tchecksum\tkind\texpected
+/models/facenet_lbp_v1.xnpu	/fixtures/facenet_seed42.bin	0x685184b3	bbox	58,132,81,104,137
+/models/facenet_lbp_v1.xnpu	/fixtures/facenet_seed7.bin	0x5d5d7d3d	bbox	70,125,93,93,123
+/models/mnist_lenet_v1.xnpu	/fixtures/mnist_lenet_7.bin	0xe5330809	top1	7
+/models/npu_vgg_s1_v1.xnpu	/fixtures/npu_vgg_s1_demo.bin	0x070006eb	top1	0
+/models/npu_vgg_s2b_v1.xnpu	/fixtures/npu_vgg_s2b_demo.bin	0x00460f09	top1	2

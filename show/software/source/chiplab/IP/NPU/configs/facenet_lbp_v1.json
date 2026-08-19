@@ -1,0 +1,39 @@
+{
+  "format_version": "npu_compile_config_v1",
+  "target": "facenet_lbp_v1",
+  "model": {
+    "name": "facenet_bbox",
+    "weights": "params/fpga_face_net.pth",
+    "input_contract": "lbp_120x160_u8_div255",
+    "output_contract": "bbox5_u8_conf_cx_cy_w_h"
+  },
+  "dataset": {
+    "root": "face/LBP_Dataset"
+  },
+  "quant": {
+    "seed": 42,
+    "calib_samples": 2048,
+    "eval_samples": 0,
+    "batch_size": 128,
+    "num_workers": 0,
+    "activation_percentile": 100.0,
+    "activation_margin": 1.05,
+    "device": "cpu"
+  },
+  "outputs": {
+    "params_hex": "params/npu_params.hex",
+    "quant_config": "params/quant_config.json",
+    "microcode_hex": "sim/microcode_face.hex",
+    "desc_hex": "scripts/npu_desc.hex",
+    "desc_header": "models/descriptors/npu_desc.h",
+    "compile_manifest": "params/npu_compile_manifest.json",
+    "package": "models/packages/facenet_lbp_v1.xnpu"
+  },
+  "integration": {
+    "sync_sim_desc_hex": "sim/npu_desc.hex"
+  },
+  "verify": {
+    "params": true,
+    "descriptors": true
+  }
+}

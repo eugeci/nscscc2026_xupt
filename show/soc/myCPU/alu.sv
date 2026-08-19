@@ -1,0 +1,105 @@
+// ============================================================
+// Module: alu_result_datapath
+// Description: Ordinary integer-result logic without the LSU address adder.
+//
+// The execute stage instantiates this block twice per issue lane: the
+// architectural copy consumes WB-repaired operands and terminates at EX/MEM,
+// while the forwarding copy consumes only registered raw operands and
+// terminates at the ID bypass network.  Keeping the address adder outside this
+// block avoids duplicating an LSU resource that is not part of EX forwarding.
+// ============================================================
+
+module alu_result_datapath
+    import cpu_defs::*;
+(
+    input  logic [ 3:0] alu_op,
+    input  logic [31:0] alu_src1,
+    input  logic [31:0] alu_src2,
+    output logic [31:0] alu_result,
+    output logic [31:0] alu_sum
+);
+
+    // ---- 3.1 Shared adder/subtractor ----
+    // negate src2 for SUB(1_000), SLT(0_010), SLTU(0_011)
+    wire negate = alu_op[3] | alu_op[1];
+    wire [31:0] sum = alu_src1 + (negate ? ~alu_src2 : alu_src2) + {31'b0, negate};
+    assign alu_sum = sum;
+
+    // ---- 3.2 Unified comparator ----
+    // Same sign: check subtraction result sign bit
+    // Different sign: signed -> src1[31], unsigned -> src2[31]
+    wire cmp = (alu_src1[31] == alu_src2[31]) ? sum[31]
+             : alu_op[0] ? alu_src2[31] : alu_src1[31];
+
+    // ---- 3.3 Bit-reversal shifter ----
+    // A right shifter plus bit reversal implements both left and right shifts.
+    wire [4:0]  shamt  = alu_src2[4:0];
+    wire [31:0] shin   = alu_op[2] ? alu_src1 : bit_reverse(alu_src1);
+    wire [32:0] shift  = {alu_op[3] & shin[31], shin};
+    wire [32:0] shiftt = $signed(shift) >>> shamt;
+    wire [31:0] shiftr = shiftt[31:0];
+    wire [31:0] shiftl = bit_reverse(shiftr);
+
+    // ---- 3.4 Output selection (parallel AND-OR) ----
+    // Decode by funct3 (alu_op[2:0]), using bit-level grouping
+    wire sel_add = (alu_op[2:0] == 3'b000);  // ADD / SUB
+    wire sel_sll = (alu_op[2:0] == 3'b001);  // SLL
+    wire sel_cmp = (alu_op[1]  & ~alu_op[2]); // SLT(010) / SLTU(011)
+    wire sel_xor = (alu_op[2:0] == 3'b100);  // XOR
+    wire sel_shr = (alu_op[2:0] == 3'b101);  // SRL / SRA
+    wire sel_or  = (alu_op == ALU_OR);       // OR
+    wire sel_nor = (alu_op == ALU_NOR);      // NOR
+    wire sel_and = (alu_op[2:0] == 3'b111);  // AND
+
+    assign alu_result = ({32{sel_add}} & sum)
+                      | ({32{sel_sll}} & shiftl)
+                      | ({32{sel_cmp}} & {31'b0, cmp})
+                      | ({32{sel_xor}} & (alu_src1 ^ alu_src2))
+                      | ({32{sel_shr}} & shiftr)
+                      | ({32{sel_or}}  & (alu_src1 | alu_src2))
+                      | ({32{sel_nor}} & ~(alu_src1 | alu_src2))
+                      | ({32{sel_and}} & (alu_src1 & alu_src2));
+
+    // ---- Bit-reverse function ----
+    function automatic logic [31:0] bit_reverse(input logic [31:0] in);
+        for (int i = 0; i < 32; i++) begin
+            bit_reverse[i] = in[31-i];
+        end
+    endfunction
+
+endmodule
+
+// ============================================================
+// Module: alu
+// Description: Architectural integer result plus independent LSU address add.
+// Domain: execute.
+// Spec: 02_Design/spec/alu_spec.md
+// Encoding: semantic values are defined by cpu_defs::alu_op_t.
+// ============================================================
+
+module alu
+    import cpu_defs::*;
+(
+    input  logic [ 3:0] alu_op,
+    input  logic [31:0] alu_src1,
+    input  logic [31:0] alu_src2,
+    input  logic [31:0] alu_addr_src1,
+    input  logic [31:0] alu_addr_src2,
+    output logic [31:0] alu_result,
+    output logic [31:0] alu_sum,
+    output logic [31:0] alu_addr
+);
+
+    alu_result_datapath u_result_datapath (
+        .alu_op     (alu_op),
+        .alu_src1   (alu_src1),
+        .alu_src2   (alu_src2),
+        .alu_result (alu_result),
+        .alu_sum    (alu_sum)
+    );
+
+    // LSU address calculation is deliberately not part of the duplicated
+    // forwarding datapath.  Its operands retain WB repair semantics.
+    assign alu_addr = alu_addr_src1 + alu_addr_src2;
+
+endmodule

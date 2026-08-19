@@ -1,0 +1,288 @@
+{
+  "format_version": "npu_compile_manifest_v1",
+  "created_at": "2026-06-21T14:51:39+00:00",
+  "target": "mnist_lenet_v1",
+  "target_description": "PPQ_Mnist LeNet, 28x28 grayscale input, 10-class uint8 scores",
+  "compiler": {
+    "script": "scripts/compile_model.py",
+    "version": 1
+  },
+  "config_path": "configs/mnist_lenet_v1.json",
+  "config": {
+    "format_version": "npu_compile_config_v1",
+    "target": "mnist_lenet_v1",
+    "model": {
+      "name": "mnist_lenet",
+      "weights": "../../../../PPQ_Mnist/LeNet.pth",
+      "input_contract": "mnist_28x28_u8_first_784_frame_bytes",
+      "output_contract": "class10_u8_scores"
+    },
+    "dataset": {
+      "root": "../../../../PPQ_Mnist"
+    },
+    "quant": {
+      "calib_samples": 0,
+      "activation_percentile": 100.0,
+      "activation_margin": 1.1,
+      "demo_sample": "img7",
+      "device": "cpu"
+    },
+    "outputs": {
+      "params_hex": "params/mnist_lenet/npu_params.hex",
+      "quant_config": "params/mnist_lenet/quant_config.json",
+      "microcode_hex": "sim/microcode_mnist_lenet.hex",
+      "desc_hex": "scripts/mnist_lenet_desc.hex",
+      "desc_header": "../../../sdk/software/examples/npu_demo/models/mnist_lenet_desc.h",
+      "demo_header": "../../../sdk/software/examples/npu_demo/models/mnist_lenet_input.h",
+      "compile_manifest": "params/mnist_lenet/npu_compile_manifest.json"
+    },
+    "integration": {
+      "sync_sim_desc_hex": "sim/mnist_lenet_desc.hex"
+    },
+    "verify": {
+      "params": false,
+      "descriptors": true
+    }
+  },
+  "resolved_paths": {
+    "weights": "/home/eugeci/Projects/PPQ_Mnist/LeNet.pth",
+    "dataset_root": "/home/eugeci/Projects/PPQ_Mnist",
+    "params_hex": "params/mnist_lenet/npu_params.hex",
+    "quant_config": "params/mnist_lenet/quant_config.json",
+    "microcode_hex": "sim/microcode_mnist_lenet.hex",
+    "desc_hex": "scripts/mnist_lenet_desc.hex",
+    "desc_header": "/home/eugeci/Projects/la32r_xupt_soc_a735t/sdk/software/examples/npu_demo/models/mnist_lenet_desc.h",
+    "demo_header": "/home/eugeci/Projects/la32r_xupt_soc_a735t/sdk/software/examples/npu_demo/models/mnist_lenet_input.h",
+    "compile_manifest": "params/mnist_lenet/npu_compile_manifest.json",
+    "sync_bsp_desc_header": null,
+    "sync_sim_desc_hex": "sim/mnist_lenet_desc.hex"
+  },
+  "steps": [
+    {
+      "step": "generate_microcode",
+      "argv": [
+        "/usr/bin/python3",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/scripts/gen_microcode.py",
+        "--target",
+        "mnist_lenet_v1",
+        "--weights",
+        "/home/eugeci/Projects/PPQ_Mnist/LeNet.pth",
+        "--quant-config",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/params/mnist_lenet/quant_config.json",
+        "--output-hex",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/sim/microcode_mnist_lenet.hex"
+      ],
+      "dry_run": false,
+      "returncode": 0
+    },
+    {
+      "step": "generate_descriptors",
+      "argv": [
+        "/usr/bin/python3",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/scripts/gen_descriptors.py",
+        "--target",
+        "mnist_lenet_v1",
+        "--microcode-hex",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/sim/microcode_mnist_lenet.hex",
+        "--quant-config",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/params/mnist_lenet/quant_config.json",
+        "--output-hex",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/scripts/mnist_lenet_desc.hex",
+        "--output-header",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/sdk/software/examples/npu_demo/models/mnist_lenet_desc.h"
+      ],
+      "dry_run": false,
+      "returncode": 0
+    },
+    {
+      "step": "sync_sim_desc_hex",
+      "src": "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/scripts/mnist_lenet_desc.hex",
+      "dst": "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/sim/mnist_lenet_desc.hex",
+      "dry_run": false,
+      "copied": true
+    },
+    {
+      "step": "check_descriptors",
+      "argv": [
+        "/usr/bin/python3",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/scripts/check_desc_match.py",
+        "--desc-hex",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/scripts/mnist_lenet_desc.hex",
+        "--microcode-hex",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/sim/microcode_mnist_lenet.hex",
+        "--quant-config",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/params/mnist_lenet/quant_config.json"
+      ],
+      "dry_run": false,
+      "returncode": 0
+    }
+  ],
+  "artifacts": {
+    "params_hex": {
+      "path": "params/mnist_lenet/npu_params.hex",
+      "bytes": 18478,
+      "sha256": "608ffe14c4dd536ebb0664ceffa4809de4cfcae775768a4c4cccee6c3725155f"
+    },
+    "quant_config": {
+      "path": "params/mnist_lenet/quant_config.json",
+      "bytes": 7408,
+      "sha256": "9b92d78937783ef5b82a642d3c96193c32c4a78bb96d154a276437d51f046109"
+    },
+    "microcode_hex": {
+      "path": "sim/microcode_mnist_lenet.hex",
+      "bytes": 544,
+      "sha256": "21898c53f4b5cc5629f44cb8466970002bd9f34b818de766ed89a025469ce218"
+    },
+    "desc_hex": {
+      "path": "scripts/mnist_lenet_desc.hex",
+      "bytes": 2304,
+      "sha256": "2900be40650b1291fa2cfef3f8f682a924b65062c531af24d84302977cbc4760"
+    },
+    "desc_header": {
+      "path": "/home/eugeci/Projects/la32r_xupt_soc_a735t/sdk/software/examples/npu_demo/models/mnist_lenet_desc.h",
+      "bytes": 795,
+      "sha256": "792c7b28e63290d2d01aff76347f2855cf97b94bca3ada7f2a2e935b0b5cefd8"
+    },
+    "demo_header": {
+      "path": "/home/eugeci/Projects/la32r_xupt_soc_a735t/sdk/software/examples/npu_demo/models/mnist_lenet_input.h",
+      "bytes": 82365,
+      "sha256": "e5403d6a74edf9c46580c277ca0de19c4a3fe190cfa079aa4018b7e1b356a8fe"
+    },
+    "sync_sim_desc_hex": {
+      "path": "sim/mnist_lenet_desc.hex",
+      "bytes": 2304,
+      "sha256": "2900be40650b1291fa2cfef3f8f682a924b65062c531af24d84302977cbc4760"
+    }
+  },
+  "quant_summary": {
+    "format_version": "npu_mnist_lenet_pow2_uint8_v1",
+    "rom_words": 2052,
+    "metrics": {
+      "samples": 4,
+      "labeled_samples": 4,
+      "quant_sample_accuracy": 1.0,
+      "details": [
+        {
+          "name": "img0",
+          "label": 0,
+          "pred": 0,
+          "scores_u8": [
+            201,
+            0,
+            10,
+            0,
+            0,
+            14,
+            76,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "img1",
+          "label": 1,
+          "pred": 1,
+          "scores_u8": [
+            0,
+            169,
+            0,
+            0,
+            20,
+            0,
+            0,
+            24,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "img2",
+          "label": 2,
+          "pred": 2,
+          "scores_u8": [
+            21,
+            65,
+            179,
+            15,
+            0,
+            0,
+            0,
+            39,
+            5,
+            0
+          ]
+        },
+        {
+          "name": "img7",
+          "label": 7,
+          "pred": 7,
+          "scores_u8": [
+            9,
+            8,
+            51,
+            0,
+            0,
+            0,
+            0,
+            229,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    "layers": [
+      {
+        "index": 0,
+        "name": "C1",
+        "shift": 8,
+        "weight_shape": [
+          4,
+          1,
+          3,
+          3
+        ],
+        "rom_weight_start": 0,
+        "rom_bias_start": 576
+      },
+      {
+        "index": 1,
+        "name": "C2",
+        "shift": 7,
+        "weight_shape": [
+          8,
+          4,
+          3,
+          3
+        ],
+        "rom_weight_start": 593,
+        "rom_bias_start": 1169
+      },
+      {
+        "index": 2,
+        "name": "C3",
+        "shift": 7,
+        "weight_shape": [
+          16,
+          8,
+          3,
+          3
+        ],
+        "rom_weight_start": 1186,
+        "rom_bias_start": 1762
+      },
+      {
+        "index": 3,
+        "name": "FC1",
+        "shift": 8,
+        "weight_shape": [
+          10,
+          64
+        ],
+        "rom_weight_start": 1779,
+        "rom_bias_start": 2035
+      }
+    ]
+  }
+}

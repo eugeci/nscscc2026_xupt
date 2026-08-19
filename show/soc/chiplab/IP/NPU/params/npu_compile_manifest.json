@@ -1,0 +1,290 @@
+{
+  "format_version": "npu_compile_manifest_v1",
+  "created_at": "2026-06-21T13:43:30+00:00",
+  "target": "facenet_lbp_v1",
+  "target_description": "FPGALightFaceNet, 120x160 LBP input, bbox5 uint8 output",
+  "compiler": {
+    "script": "scripts/compile_model.py",
+    "version": 1
+  },
+  "config_path": "configs/facenet_lbp_v1.json",
+  "config": {
+    "format_version": "npu_compile_config_v1",
+    "target": "facenet_lbp_v1",
+    "model": {
+      "name": "facenet_bbox",
+      "weights": "params/fpga_face_net.pth",
+      "input_contract": "lbp_120x160_u8_div255",
+      "output_contract": "bbox5_u8_conf_cx_cy_w_h"
+    },
+    "dataset": {
+      "root": "face/LBP_Dataset"
+    },
+    "quant": {
+      "seed": 42,
+      "calib_samples": 2048,
+      "eval_samples": 0,
+      "batch_size": 128,
+      "num_workers": 0,
+      "activation_percentile": 100.0,
+      "activation_margin": 1.05,
+      "device": "cpu"
+    },
+    "outputs": {
+      "params_hex": "params/npu_params.hex",
+      "quant_config": "params/quant_config.json",
+      "microcode_hex": "sim/microcode_face.hex",
+      "desc_hex": "scripts/npu_desc.hex",
+      "desc_header": "scripts/npu_desc.h",
+      "compile_manifest": "params/npu_compile_manifest.json"
+    },
+    "integration": {
+      "sync_bsp_desc_header": "../../../sdk/software/bsp/include/npu_desc.h",
+      "sync_sim_desc_hex": "sim/npu_desc.hex"
+    },
+    "verify": {
+      "params": true,
+      "descriptors": true
+    }
+  },
+  "resolved_paths": {
+    "weights": "params/fpga_face_net.pth",
+    "dataset_root": "face/LBP_Dataset",
+    "params_hex": "params/npu_params.hex",
+    "quant_config": "params/quant_config.json",
+    "microcode_hex": "sim/microcode_face.hex",
+    "desc_hex": "scripts/npu_desc.hex",
+    "desc_header": "scripts/npu_desc.h",
+    "compile_manifest": "params/npu_compile_manifest.json",
+    "sync_bsp_desc_header": "/home/eugeci/Projects/la32r_xupt_soc_a735t/sdk/software/bsp/include/npu_desc.h",
+    "sync_sim_desc_hex": "sim/npu_desc.hex"
+  },
+  "steps": [
+    {
+      "step": "generate_microcode",
+      "argv": [
+        "/usr/bin/python3",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/scripts/gen_microcode.py",
+        "--weights",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/params/fpga_face_net.pth",
+        "--quant-config",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/params/quant_config.json",
+        "--output-hex",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/sim/microcode_face.hex"
+      ],
+      "dry_run": false,
+      "returncode": 0
+    },
+    {
+      "step": "generate_descriptors",
+      "argv": [
+        "/usr/bin/python3",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/scripts/gen_descriptors.py",
+        "--microcode-hex",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/sim/microcode_face.hex",
+        "--output-hex",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/scripts/npu_desc.hex",
+        "--output-header",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/scripts/npu_desc.h"
+      ],
+      "dry_run": false,
+      "returncode": 0
+    },
+    {
+      "step": "sync_bsp_desc_header",
+      "src": "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/scripts/npu_desc.h",
+      "dst": "/home/eugeci/Projects/la32r_xupt_soc_a735t/sdk/software/bsp/include/npu_desc.h",
+      "dry_run": false,
+      "copied": true
+    },
+    {
+      "step": "sync_sim_desc_hex",
+      "src": "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/scripts/npu_desc.hex",
+      "dst": "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/sim/npu_desc.hex",
+      "dry_run": false,
+      "copied": true
+    }
+  ],
+  "artifacts": {
+    "params_hex": {
+      "path": "params/npu_params.hex",
+      "bytes": 189892,
+      "sha256": "a1b5a9edf7980b270e58fc543585a809e632fbac578007129ec04db9ceb34ee9"
+    },
+    "quant_config": {
+      "path": "params/quant_config.json",
+      "bytes": 11275,
+      "sha256": "a9a2fc55df1e83f7fd3a254b73e48e14cea8bce8d014ed6a0840253a00c35a8b"
+    },
+    "microcode_hex": {
+      "path": "sim/microcode_face.hex",
+      "bytes": 544,
+      "sha256": "0fa6dd0f5d4976df026876610b4424b91b666de3f98c57978d02e95d21907294"
+    },
+    "desc_hex": {
+      "path": "scripts/npu_desc.hex",
+      "bytes": 2304,
+      "sha256": "ff83309d9060a9da320b4fd6ab4cad93e9e87b2f700b86fde5411db7dc77e173"
+    },
+    "desc_header": {
+      "path": "scripts/npu_desc.h",
+      "bytes": 1504,
+      "sha256": "df6a384d84edd40899744ca56b45907731ed7dfd357e926db8b6d97de6193deb"
+    },
+    "sync_bsp_desc_header": {
+      "path": "/home/eugeci/Projects/la32r_xupt_soc_a735t/sdk/software/bsp/include/npu_desc.h",
+      "bytes": 1504,
+      "sha256": "df6a384d84edd40899744ca56b45907731ed7dfd357e926db8b6d97de6193deb"
+    },
+    "sync_sim_desc_hex": {
+      "path": "sim/npu_desc.hex",
+      "bytes": 2304,
+      "sha256": "ff83309d9060a9da320b4fd6ab4cad93e9e87b2f700b86fde5411db7dc77e173"
+    }
+  },
+  "quant_summary": {
+    "format_version": "npu_face_calibrated_pow2_uint8_v1",
+    "rom_words": 21098,
+    "metrics": {
+      "samples": 9997,
+      "float_conf_accuracy": 0.9194758427528259,
+      "quant_conf_accuracy": 0.9211763529058717,
+      "float_pos_avg_iou": 0.6383577585220337,
+      "quant_pos_avg_iou": 0.6122435927391052,
+      "float_pos_iou_gt_0p5": 0.8270403742790222,
+      "quant_pos_iou_gt_0p5": 0.784780740737915,
+      "float_bbox_mae_pos": 0.038935404270887375,
+      "quant_bbox_mae_pos": 0.040528424084186554,
+      "quant_vs_float_output_mae": 0.008929829113185406,
+      "quant_vs_float_conf_mae": 0.011249550618231297
+    },
+    "layers": [
+      {
+        "index": 0,
+        "name": "C1",
+        "shift": 8,
+        "weight_shape": [
+          8,
+          1,
+          3,
+          3
+        ],
+        "rom_weight_start": 0,
+        "rom_bias_start": 576
+      },
+      {
+        "index": 1,
+        "name": "C2",
+        "shift": 8,
+        "weight_shape": [
+          16,
+          8,
+          3,
+          3
+        ],
+        "rom_weight_start": 593,
+        "rom_bias_start": 1169
+      },
+      {
+        "index": 2,
+        "name": "C3",
+        "shift": 6,
+        "weight_shape": [
+          16,
+          16,
+          1,
+          1
+        ],
+        "rom_weight_start": 1186,
+        "rom_bias_start": 1250
+      },
+      {
+        "index": 3,
+        "name": "C4",
+        "shift": 8,
+        "weight_shape": [
+          24,
+          16,
+          3,
+          3
+        ],
+        "rom_weight_start": 1267,
+        "rom_bias_start": 2419
+      },
+      {
+        "index": 4,
+        "name": "C5",
+        "shift": 9,
+        "weight_shape": [
+          32,
+          24,
+          3,
+          3
+        ],
+        "rom_weight_start": 2452,
+        "rom_bias_start": 4756
+      },
+      {
+        "index": 5,
+        "name": "C6",
+        "shift": 6,
+        "weight_shape": [
+          32,
+          32,
+          1,
+          1
+        ],
+        "rom_weight_start": 4789,
+        "rom_bias_start": 5045
+      },
+      {
+        "index": 6,
+        "name": "C7",
+        "shift": 8,
+        "weight_shape": [
+          32,
+          32,
+          3,
+          3
+        ],
+        "rom_weight_start": 5078,
+        "rom_bias_start": 7382
+      },
+      {
+        "index": 7,
+        "name": "C8",
+        "shift": 7,
+        "weight_shape": [
+          32,
+          32,
+          2,
+          2
+        ],
+        "rom_weight_start": 7415,
+        "rom_bias_start": 8439
+      },
+      {
+        "index": 8,
+        "name": "FC1",
+        "shift": 7,
+        "weight_shape": [
+          64,
+          768
+        ],
+        "rom_weight_start": 8472,
+        "rom_bias_start": 20760
+      },
+      {
+        "index": 9,
+        "name": "FC2",
+        "shift": 4,
+        "weight_shape": [
+          5,
+          64
+        ],
+        "rom_weight_start": 20825,
+        "rom_bias_start": 21081
+      }
+    ]
+  }
+}

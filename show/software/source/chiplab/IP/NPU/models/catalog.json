@@ -1,0 +1,202 @@
+{
+  "format_version": "xupt_npu_model_catalog_v1",
+  "hardware_abi": 2,
+  "source": {
+    "repository": "../la32r_xupt_soc_a735t",
+    "commit": "d47c32ce69301322c98e79d80691b3e197e5932a",
+    "migrated_at": "2026-07-30"
+  },
+  "shared_limits": {
+    "scratch_bytes": 524288,
+    "parameter_alignment": 4,
+    "scratch_alignment": 16,
+    "result_alignment": 4
+  },
+  "models": [
+    {
+      "model_id": 65537,
+      "target": "facenet_lbp_v1",
+      "name": "facenet_bbox",
+      "task": "bbox",
+      "layers": 10,
+      "input": {
+        "mode": "frame",
+        "bytes": 19200,
+        "shape": [160, 120, 1],
+        "layout": "linear",
+        "dtype": "u8"
+      },
+      "output": {
+        "bytes": 16,
+        "shape": [1, 1, 5],
+        "layout": "linear",
+        "dtype": "u8"
+      },
+      "parameter_image": {
+        "path": "../params/npu_params.hex",
+        "bytes": 84392,
+        "sha256": "a1b5a9edf7980b270e58fc543585a809e632fbac578007129ec04db9ceb34ee9"
+      },
+      "descriptor": {
+        "path": "../sim/npu_desc.hex",
+        "sha256": "4cb98bfd2e82c982a7793844533c644395cee37377ca5f7d7915544405c8f08a"
+      },
+      "microcode": {
+        "path": "../sim/microcode_face.hex",
+        "sha256": "0fa6dd0f5d4976df026876610b4424b91b666de3f98c57978d02e95d21907294"
+      },
+      "fixtures": [
+        {
+          "id": "facenet_seed42",
+          "path": "fixtures/npu_golden_input.h",
+          "input_symbol": "npu_golden_frame",
+          "expected_symbol": "npu_golden_bbox",
+          "sha256": "6c095a2bc98fc8ae4feb64430913befc008a30aa23e62df9e8feb442dfc3d2c9",
+          "result_checksum": "0x685184b3",
+          "bbox": [58, 132, 81, 104, 137]
+        },
+        {
+          "id": "facenet_seed7",
+          "path": "fixtures/facenet_seed7_input.h",
+          "input_symbol": "npu_demo_facenet_seed7_frame",
+          "expected_symbol": "npu_demo_facenet_seed7_bbox",
+          "sha256": "89a574b3c23c58271c56718ef5044186e21409f8fa445b0b75578d7df1e38b16",
+          "result_checksum": "0x5d5d7d3d",
+          "bbox": [70, 125, 93, 93, 123]
+        }
+      ]
+    },
+    {
+      "model_id": 131073,
+      "target": "mnist_lenet_v1",
+      "name": "mnist_lenet",
+      "task": "classification",
+      "layers": 4,
+      "input": {
+        "mode": "frame",
+        "bytes": 19200,
+        "shape": [28, 28, 1],
+        "layout": "linear",
+        "dtype": "u8"
+      },
+      "output": {
+        "bytes": 10,
+        "shape": [1, 1, 10],
+        "layout": "linear",
+        "dtype": "u8"
+      },
+      "parameter_image": {
+        "path": "../params/mnist_lenet/npu_params.hex",
+        "bytes": 8208,
+        "sha256": "608ffe14c4dd536ebb0664ceffa4809de4cfcae775768a4c4cccee6c3725155f"
+      },
+      "descriptor": {
+        "path": "../sim/mnist_lenet_desc.hex",
+        "sha256": "2900be40650b1291fa2cfef3f8f682a924b65062c531af24d84302977cbc4760"
+      },
+      "microcode": {
+        "path": "../sim/microcode_mnist_lenet.hex",
+        "sha256": "21898c53f4b5cc5629f44cb8466970002bd9f34b818de766ed89a025469ce218"
+      },
+      "fixtures": [
+        {
+          "id": "mnist_lenet_7",
+          "path": "fixtures/mnist_lenet_input.h",
+          "input_symbol": "mnist_lenet_frame",
+          "expected_symbol": "mnist_lenet_expected_scores",
+          "sha256": "e5403d6a74edf9c46580c277ca0de19c4a3fe190cfa079aa4018b7e1b356a8fe",
+          "result_checksum": "0xe5330809",
+          "top1": 7
+        }
+      ]
+    },
+    {
+      "model_id": 196609,
+      "target": "npu_vgg_s1_v1",
+      "name": "npu_vgg_s1",
+      "task": "classification",
+      "layers": 6,
+      "input": {
+        "mode": "packed_preload",
+        "bytes": 3468,
+        "shape": [34, 34, 3],
+        "layout": "chw",
+        "dtype": "u8"
+      },
+      "output": {
+        "bytes": 10,
+        "shape": [1, 1, 10],
+        "layout": "linear",
+        "dtype": "u8"
+      },
+      "parameter_image": {
+        "path": "../params/npu_vgg_s1/npu_params.hex",
+        "bytes": 36440,
+        "sha256": "a1cb4dd2df896e5eca9faab4b6f68050c1e4f6e1e0afa7d69f742f0377dab70a"
+      },
+      "descriptor": {
+        "path": "../sim/npu_vgg_s1_desc.hex",
+        "sha256": "f7dd6612aee56fef2308bc19e07b6dc7a5f51d748d8314822e8ac5d43f53e1e3"
+      },
+      "microcode": {
+        "path": "../sim/microcode_npu_vgg_s1.hex",
+        "sha256": "9d8ad9a86c3a3d9c65c3491e5fad3cba3a09889efb3014b7aa0ab7d72348b322"
+      },
+      "fixtures": [
+        {
+          "id": "npu_vgg_s1_demo",
+          "path": "fixtures/npu_vgg_s1_input.h",
+          "input_symbol": "npu_vgg_s1_input",
+          "expected_symbol": "npu_vgg_s1_expected_scores",
+          "sha256": "f36293ca625fd7477c299798a70d6d875bd17bb0dd31287a0f06c86cdcd398ae",
+          "result_checksum": "0x070006eb",
+          "top1": 0
+        }
+      ]
+    },
+    {
+      "model_id": 196610,
+      "target": "npu_vgg_s2b_v1",
+      "name": "npu_vgg_s2b",
+      "task": "classification",
+      "layers": 9,
+      "input": {
+        "mode": "packed_preload",
+        "bytes": 3468,
+        "shape": [34, 34, 3],
+        "layout": "chw",
+        "dtype": "u8"
+      },
+      "output": {
+        "bytes": 10,
+        "shape": [1, 1, 10],
+        "layout": "linear",
+        "dtype": "u8"
+      },
+      "parameter_image": {
+        "path": "../params/npu_vgg_s2b/npu_params.hex",
+        "bytes": 122980,
+        "sha256": "2caaf50a8fce0c9e7046448e6981c63ca49353b539554566ccfb5a758ec92663"
+      },
+      "descriptor": {
+        "path": "../sim/npu_vgg_s2b_desc.hex",
+        "sha256": "be6745f4b635e520b0c88d495e133f3cca0068f4987cef00c59b79f6e6f5109e"
+      },
+      "microcode": {
+        "path": "../sim/microcode_npu_vgg_s2b.hex",
+        "sha256": "f7b6c0f7f63b16e822341a014b8b73a459acd2aaeb4f0d5637cb764248756401"
+      },
+      "fixtures": [
+        {
+          "id": "npu_vgg_s2b_demo",
+          "path": "fixtures/npu_vgg_s2b_input.h",
+          "input_symbol": "npu_vgg_s2b_input",
+          "expected_symbol": "npu_vgg_s2b_expected_scores",
+          "sha256": "da691dc234a820f3010f89341c6578a34ea4ee0aa213be4d2b4dd712915dcb1e",
+          "result_checksum": "0x00460f09",
+          "top1": 2
+        }
+      ]
+    }
+  ]
+}

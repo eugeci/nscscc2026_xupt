@@ -1,0 +1,329 @@
+{
+  "format_version": "npu_compile_manifest_v1",
+  "created_at": "2026-06-24T13:35:32+00:00",
+  "target": "npu_vgg_s2b_v1",
+  "target_description": "NPU TinyVGG-S2b, 3x34x34 packed preload input, 10-class uint8 scores",
+  "compiler": {
+    "script": "scripts/compile_model.py",
+    "version": 1
+  },
+  "config_path": "configs/npu_vgg_s2b_v1.json",
+  "config": {
+    "format_version": "npu_compile_config_v1",
+    "target": "npu_vgg_s2b_v1",
+    "model": {
+      "name": "npu_vgg_s2b",
+      "weights": "../../../../tiny_vgg_cnn/checkpoints/npu_s2b_cifar/tiny_vgg_best.pth",
+      "input_contract": "packed_preload_chw_3x34x34_u8_border128",
+      "output_contract": "class10_u8_scores"
+    },
+    "dataset": {
+      "root": "../../../../tiny_vgg_cnn/data"
+    },
+    "quant": {
+      "variant": "npu_s2b",
+      "tiny_vgg_root": "../../../../tiny_vgg_cnn",
+      "demo_input_bin": "../../../../tiny_vgg_cnn/artifacts/npu_vgg_s2b/input_chw_u8.bin",
+      "seed": 42,
+      "calib_samples": 1024,
+      "eval_samples": 0,
+      "batch_size": 128,
+      "activation_percentile": 99.9,
+      "activation_margin": 1.1,
+      "device": "cpu"
+    },
+    "outputs": {
+      "params_hex": "params/npu_vgg_s2b/npu_params.hex",
+      "quant_config": "params/npu_vgg_s2b/quant_config.json",
+      "microcode_hex": "sim/microcode_npu_vgg_s2b.hex",
+      "desc_hex": "scripts/npu_vgg_s2b_desc.hex",
+      "desc_header": "../../../sdk/software/examples/npu_demo/models/npu_vgg_s2b_desc.h",
+      "demo_header": "../../../sdk/software/examples/npu_demo/models/npu_vgg_s2b_input.h",
+      "compile_manifest": "params/npu_vgg_s2b/npu_compile_manifest.json"
+    },
+    "integration": {
+      "sync_sim_desc_hex": "sim/npu_vgg_s2b_desc.hex"
+    },
+    "verify": {
+      "params": false,
+      "descriptors": true
+    }
+  },
+  "resolved_paths": {
+    "weights": "/home/eugeci/Projects/tiny_vgg_cnn/checkpoints/npu_s2b_cifar/tiny_vgg_best.pth",
+    "dataset_root": "/home/eugeci/Projects/tiny_vgg_cnn/data",
+    "params_hex": "params/npu_vgg_s2b/npu_params.hex",
+    "quant_config": "params/npu_vgg_s2b/quant_config.json",
+    "microcode_hex": "sim/microcode_npu_vgg_s2b.hex",
+    "desc_hex": "scripts/npu_vgg_s2b_desc.hex",
+    "desc_header": "/home/eugeci/Projects/la32r_xupt_soc_a735t/sdk/software/examples/npu_demo/models/npu_vgg_s2b_desc.h",
+    "demo_header": "/home/eugeci/Projects/la32r_xupt_soc_a735t/sdk/software/examples/npu_demo/models/npu_vgg_s2b_input.h",
+    "compile_manifest": "params/npu_vgg_s2b/npu_compile_manifest.json",
+    "sync_bsp_desc_header": null,
+    "sync_sim_desc_hex": "sim/npu_vgg_s2b_desc.hex"
+  },
+  "steps": [
+    {
+      "step": "quantize_params",
+      "argv": [
+        "/usr/bin/python3",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/scripts/quant_tiny_vgg.py",
+        "--target",
+        "npu_vgg_s2b_v1",
+        "--weights",
+        "/home/eugeci/Projects/tiny_vgg_cnn/checkpoints/npu_s2b_cifar/tiny_vgg_best.pth",
+        "--dataset-root",
+        "/home/eugeci/Projects/tiny_vgg_cnn/data",
+        "--output-hex",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/params/npu_vgg_s2b/npu_params.hex",
+        "--output-config",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/params/npu_vgg_s2b/quant_config.json",
+        "--seed",
+        "42",
+        "--calib-samples",
+        "1024",
+        "--eval-samples",
+        "0",
+        "--batch-size",
+        "128",
+        "--activation-percentile",
+        "99.9",
+        "--activation-margin",
+        "1.1",
+        "--device",
+        "cpu",
+        "--variant",
+        "npu_s2b",
+        "--tiny-vgg-root",
+        "/home/eugeci/Projects/tiny_vgg_cnn",
+        "--demo-input-bin",
+        "/home/eugeci/Projects/tiny_vgg_cnn/artifacts/npu_vgg_s2b/input_chw_u8.bin",
+        "--output-demo-header",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/sdk/software/examples/npu_demo/models/npu_vgg_s2b_input.h"
+      ],
+      "dry_run": false,
+      "returncode": 0
+    },
+    {
+      "step": "generate_microcode",
+      "argv": [
+        "/usr/bin/python3",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/scripts/gen_microcode.py",
+        "--target",
+        "npu_vgg_s2b_v1",
+        "--weights",
+        "/home/eugeci/Projects/tiny_vgg_cnn/checkpoints/npu_s2b_cifar/tiny_vgg_best.pth",
+        "--quant-config",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/params/npu_vgg_s2b/quant_config.json",
+        "--output-hex",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/sim/microcode_npu_vgg_s2b.hex"
+      ],
+      "dry_run": false,
+      "returncode": 0
+    },
+    {
+      "step": "generate_descriptors",
+      "argv": [
+        "/usr/bin/python3",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/scripts/gen_descriptors.py",
+        "--target",
+        "npu_vgg_s2b_v1",
+        "--microcode-hex",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/sim/microcode_npu_vgg_s2b.hex",
+        "--quant-config",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/params/npu_vgg_s2b/quant_config.json",
+        "--output-hex",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/scripts/npu_vgg_s2b_desc.hex",
+        "--output-header",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/sdk/software/examples/npu_demo/models/npu_vgg_s2b_desc.h"
+      ],
+      "dry_run": false,
+      "returncode": 0
+    },
+    {
+      "step": "sync_sim_desc_hex",
+      "src": "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/scripts/npu_vgg_s2b_desc.hex",
+      "dst": "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/sim/npu_vgg_s2b_desc.hex",
+      "dry_run": false,
+      "copied": true
+    },
+    {
+      "step": "check_descriptors",
+      "argv": [
+        "/usr/bin/python3",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/scripts/check_desc_match.py",
+        "--desc-hex",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/scripts/npu_vgg_s2b_desc.hex",
+        "--microcode-hex",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/sim/microcode_npu_vgg_s2b.hex",
+        "--quant-config",
+        "/home/eugeci/Projects/la32r_xupt_soc_a735t/rtl/ip/npu_ip/params/npu_vgg_s2b/quant_config.json"
+      ],
+      "dry_run": false,
+      "returncode": 0
+    }
+  ],
+  "artifacts": {
+    "params_hex": {
+      "path": "params/npu_vgg_s2b/npu_params.hex",
+      "bytes": 276715,
+      "sha256": "2caaf50a8fce0c9e7046448e6981c63ca49353b539554566ccfb5a758ec92663"
+    },
+    "quant_config": {
+      "path": "params/npu_vgg_s2b/quant_config.json",
+      "bytes": 12863,
+      "sha256": "464af6f3779cacb5a588b1b735593f18e32520291c9de84500524728be771fb7"
+    },
+    "microcode_hex": {
+      "path": "sim/microcode_npu_vgg_s2b.hex",
+      "bytes": 544,
+      "sha256": "f7b6c0f7f63b16e822341a014b8b73a459acd2aaeb4f0d5637cb764248756401"
+    },
+    "desc_hex": {
+      "path": "scripts/npu_vgg_s2b_desc.hex",
+      "bytes": 2304,
+      "sha256": "be6745f4b635e520b0c88d495e133f3cca0068f4987cef00c59b79f6e6f5109e"
+    },
+    "desc_header": {
+      "path": "/home/eugeci/Projects/la32r_xupt_soc_a735t/sdk/software/examples/npu_demo/models/npu_vgg_s2b_desc.h",
+      "bytes": 1410,
+      "sha256": "39964b9e234740b03b1136e149fcf8dcc82cf24c2a2dfe66bb112288028f87ad"
+    },
+    "demo_header": {
+      "path": "/home/eugeci/Projects/la32r_xupt_soc_a735t/sdk/software/examples/npu_demo/models/npu_vgg_s2b_input.h",
+      "bytes": 20235,
+      "sha256": "da691dc234a820f3010f89341c6578a34ea4ee0aa213be4d2b4dd712915dcb1e"
+    },
+    "sync_sim_desc_hex": {
+      "path": "sim/npu_vgg_s2b_desc.hex",
+      "bytes": 2304,
+      "sha256": "be6745f4b635e520b0c88d495e133f3cca0068f4987cef00c59b79f6e6f5109e"
+    }
+  },
+  "quant_summary": {
+    "format_version": "npu_tiny_vgg_pow2_uint8_v1",
+    "rom_words": 30745,
+    "metrics": {
+      "samples": 0,
+      "quant_sample_accuracy": null,
+      "details": []
+    },
+    "layers": [
+      {
+        "index": 0,
+        "name": "C1",
+        "shift": 7,
+        "weight_shape": [
+          16,
+          3,
+          3,
+          3
+        ],
+        "rom_weight_start": 0,
+        "rom_bias_start": 576
+      },
+      {
+        "index": 1,
+        "name": "C2",
+        "shift": 8,
+        "weight_shape": [
+          16,
+          16,
+          3,
+          3
+        ],
+        "rom_weight_start": 593,
+        "rom_bias_start": 1169
+      },
+      {
+        "index": 2,
+        "name": "C3",
+        "shift": 8,
+        "weight_shape": [
+          32,
+          16,
+          3,
+          3
+        ],
+        "rom_weight_start": 1186,
+        "rom_bias_start": 2338
+      },
+      {
+        "index": 3,
+        "name": "C4",
+        "shift": 8,
+        "weight_shape": [
+          32,
+          32,
+          3,
+          3
+        ],
+        "rom_weight_start": 2371,
+        "rom_bias_start": 4675
+      },
+      {
+        "index": 4,
+        "name": "C5",
+        "shift": 8,
+        "weight_shape": [
+          48,
+          32,
+          3,
+          3
+        ],
+        "rom_weight_start": 4708,
+        "rom_bias_start": 8164
+      },
+      {
+        "index": 5,
+        "name": "C6",
+        "shift": 8,
+        "weight_shape": [
+          48,
+          48,
+          3,
+          3
+        ],
+        "rom_weight_start": 8213,
+        "rom_bias_start": 13397
+      },
+      {
+        "index": 6,
+        "name": "C7",
+        "shift": 8,
+        "weight_shape": [
+          64,
+          48,
+          3,
+          3
+        ],
+        "rom_weight_start": 13446,
+        "rom_bias_start": 20358
+      },
+      {
+        "index": 7,
+        "name": "C8",
+        "shift": 8,
+        "weight_shape": [
+          64,
+          64,
+          3,
+          3
+        ],
+        "rom_weight_start": 20423,
+        "rom_bias_start": 29639
+      },
+      {
+        "index": 8,
+        "name": "FC1",
+        "shift": 10,
+        "weight_shape": [
+          10,
+          256
+        ],
+        "rom_weight_start": 29704,
+        "rom_bias_start": 30728
+      }
+    ]
+  }
+}

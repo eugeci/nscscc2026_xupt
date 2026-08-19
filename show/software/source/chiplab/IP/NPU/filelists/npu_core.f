@@ -1,0 +1,31 @@
+# NPU core RTL only.
+# Use from npu_ip root: iverilog -f filelists/npu_core.f ...
++incdir+rtl/core/include
+rtl/core/activation_core.v
+rtl/core/activation_single.v
+rtl/core/bias_buffer.v
+rtl/core/npu_xilinx_sdpram.v
+rtl/core/npu_xor_fold.v
+rtl/core/channel_accumulator.v
+rtl/core/pool_reorder_buffer.v
+rtl/core/conv_engine_top.v
+rtl/core/line_buffer.v
+rtl/core/line_buffer_conv.v
+rtl/core/line_buffer_pool.v
+rtl/core/mac_tree_3x3.v
+rtl/core/max_pool.v
+rtl/core/max_pool_2x2.v
+rtl/core/npu_layer_debug.v
+rtl/core/npu_core_top.v
+rtl/core/npu_param_rom.v
+rtl/core/npu_sequencer.v
+rtl/core/pe_array.v
+rtl/core/quantize.v
+rtl/core/quantize_single.v
+rtl/core/sync_fifo_npu_module.v
+rtl/core/weight_kernel_mapper.v
+rtl/core/weight_buffer.v
+rtl/core/bcu/bcu.v
+rtl/core/bcu/fm_bank_array.v
+rtl/core/bcu/lbp_input_buffer.v
+rtl/core/gcu/gcu.v

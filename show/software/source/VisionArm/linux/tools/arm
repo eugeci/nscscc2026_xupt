@@ -1,0 +1,136 @@
+#!/bin/sh
+
+# armctl - control the ESP32 mechanical arm through the FPGA UART register.
+# Compatible with the BusyBox /bin/sh environment used by the chiplab Linux.
+
+UART_REG=0x1fd0e010
+STEP_UNIT=100
+MAX_STEPS=5000
+MOVE_DELAY_US=200000
+
+usage()
+{
+    cat <<'EOF'
+Usage:
+  arm x forward|reverse [steps]
+  arm y up|down [steps]
+  arm z forward|reverse [steps]
+  arm grip open|close
+  arm home
+  arm position
+  arm hello
+  arm status
+
+Motion steps must be a multiple of 100 in the range 100..5000.
+The current ESP32 firmware couples one Y step to every three Z steps.
+`arm home` requires the ESP32 filesystem from this release and working
+X/Y/Z limit switches. Keep a hand on the motor-power switch during homing.
+EOF
+}
+
+send_byte()
+{
+    devmem "$UART_REG" 32 "$1" >/dev/null
+}
+
+send_motion()
+{
+    code="$1"
+    steps="$2"
+
+    case "$steps" in
+        ''|*[!0-9]*)
+            echo "armctl: steps must be an integer" >&2
+            return 2
+            ;;
+    esac
+
+    if [ "$steps" -lt "$STEP_UNIT" ] || [ "$steps" -gt "$MAX_STEPS" ]; then
+        echo "armctl: steps must be in the range $STEP_UNIT..$MAX_STEPS" >&2
+        return 2
+    fi
+
+    if [ $((steps % STEP_UNIT)) -ne 0 ]; then
+        echo "armctl: steps must be a multiple of $STEP_UNIT" >&2
+        return 2
+    fi
+
+    count=$((steps / STEP_UNIT))
+    while [ "$count" -gt 0 ]; do
+        if ! send_byte "$code"; then
+            echo "armctl: FPGA UART register write failed" >&2
+            return 1
+        fi
+        count=$((count - 1))
+        if [ "$count" -gt 0 ]; then
+            usleep "$MOVE_DELAY_US"
+        fi
+    done
+}
+
+axis="$1"
+direction="$2"
+steps="${3:-100}"
+
+case "$axis:$direction" in
+    x:forward)
+        send_motion 0x31 "$steps" && echo "armctl: X forward $steps steps sent"
+        ;;
+    x:reverse)
+        send_motion 0x32 "$steps" && echo "armctl: X reverse $steps steps sent"
+        ;;
+    y:up)
+        send_motion 0x33 "$steps" && echo "armctl: Y up $steps steps sent"
+        ;;
+    y:down)
+        send_motion 0x34 "$steps" && echo "armctl: Y down $steps steps sent"
+        ;;
+    z:forward)
+        echo "armctl: warning: Z motion currently includes Y-axis coupling" >&2
+        send_motion 0x35 "$steps" && echo "armctl: Z forward $steps steps sent"
+        ;;
+    z:reverse)
+        echo "armctl: warning: Z motion currently includes Y-axis coupling" >&2
+        send_motion 0x36 "$steps" && echo "armctl: Z reverse $steps steps sent"
+        ;;
+    grip:open)
+        send_byte 0x37 || exit 1
+        echo "armctl: gripper open command sent"
+        ;;
+    grip:close)
+        send_byte 0x38 || exit 1
+        echo "armctl: gripper close command sent"
+        ;;
+    home:)
+        send_byte 0x39 || exit 1
+        echo "armctl: homing requested"
+        echo "armctl: verify DONE HOME on the ESP32 USB console"
+        echo "armctl: FPGA-to-ESP32 reply reception is not implemented yet"
+        ;;
+    position:)
+        send_byte 0x30 || exit 1
+        echo "armctl: position requested; read the ESP32 USB console"
+        ;;
+    hello:)
+        for code in 0x48 0x45 0x4c 0x4c 0x4f 0x0a; do
+            send_byte "$code" || exit 1
+            usleep 3000
+        done
+        echo "armctl: HELLO sent"
+        ;;
+    status:)
+        devmem "$UART_REG" 32
+        ;;
+    help:|--help:|-h:)
+        usage
+        ;;
+    :)
+        usage >&2
+        exit 2
+        ;;
+    *)
+        echo "armctl: unknown command: $*" >&2
+        usage >&2
+        exit 2
+        ;;
+esac

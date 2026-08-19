@@ -1,0 +1,4 @@
+.work/
+
+# Default host-side userspace build output
+userspace/build/

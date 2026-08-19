@@ -1,0 +1,113 @@
+#!/bin/sh
+
+# Linux control utility for the ALIENTEK NT35510 LCD DDR frame path.
+LCD_CTRL=0x1fd0e140
+LCD_FB=0x1fd0e144
+LCD_STATUS=0x1fd0e148
+LCD_SIZE=0x1fd0e14c
+LCD_MAGIC=0x1fd0e150
+CAM_CTRL=0x1fd0e100
+FRAME_ADDR=0x07800000
+FRAME_SEEK_4K=30720
+DEFAULT_IMAGE=/vision/naruto.rgb565
+
+read_reg() {
+    devmem "$1" 32
+}
+
+write_reg() {
+    devmem "$1" 32 "$2" >/dev/null
+}
+
+usage() {
+    echo "Usage:"
+    echo "  lcdctl status"
+    echo "  lcdctl show [800x480.rgb565]"
+    echo "  lcdctl bars"
+    echo "  lcdctl switch"
+    echo "  lcdctl off"
+}
+
+status() {
+    ctrl=$(read_reg "$LCD_CTRL")
+    fb=$(read_reg "$LCD_FB")
+    stat=$(read_reg "$LCD_STATUS")
+    size=$(read_reg "$LCD_SIZE")
+    magic=$(read_reg "$LCD_MAGIC")
+    value=$((stat))
+    echo "LCD ctrl   : $ctrl"
+    echo "LCD fb     : $fb"
+    echo "LCD status : $stat"
+    echo "LCD size   : $size"
+    echo "LCD magic  : $magic"
+    echo "initialized: $(( (value >> 0) & 1 ))"
+    echo "panel busy : $(( (value >> 1) & 1 ))"
+    echo "panel done : $(( (value >> 2) & 1 ))"
+    echo "DDR wait   : $(( (value >> 3) & 1 ))"
+    echo "reader busy: $(( (value >> 4) & 1 ))"
+    echo "reader done: $(( (value >> 5) & 1 ))"
+    echo "AXI error  : $(( (value >> 6) & 1 ))"
+    echo "DDR owner  : $(( (value >> 7) & 1 ))"
+}
+
+show_image() {
+    image=${1:-$DEFAULT_IMAGE}
+    if [ ! -r "$image" ]; then
+        echo "lcdctl: image not found: $image" >&2
+        return 1
+    fi
+
+    bytes=$(wc -c < "$image" | tr -d ' ')
+    if [ "$bytes" != "768000" ]; then
+        echo "lcdctl: RGB565 image must be exactly 768000 bytes, got $bytes" >&2
+        return 1
+    fi
+
+    # Stop camera VDMA before borrowing its MM2S DDR port.
+    write_reg "$CAM_CTRL" 0
+    usleep 200000
+
+    echo "lcdctl: loading $image to DDR $FRAME_ADDR ..."
+    if ! dd if="$image" of=/dev/mem bs=4096 seek="$FRAME_SEEK_4K" conv=notrunc; then
+        echo "lcdctl: /dev/mem copy failed" >&2
+        return 1
+    fi
+
+    write_reg "$LCD_FB" "$FRAME_ADDR"
+    old=$(read_reg "$LCD_CTRL")
+    toggle=$(( (old ^ 0x100) & 0x100 ))
+    command=$(( toggle | 1 ))
+    write_reg "$LCD_CTRL" "$command"
+    echo "lcdctl: frame requested"
+
+    # Wait at most two seconds for the panel transaction to finish.
+    usleep 10000
+    count=0
+    while [ "$count" -lt 40 ]; do
+        stat=$(read_reg "$LCD_STATUS")
+        value=$((stat))
+        if [ $((value & 0x44)) -ne 0 ]; then
+            if [ $((value & 0x40)) -ne 0 ]; then
+                echo "lcdctl: AXI read error, status=$stat" >&2
+                return 1
+            fi
+            if [ $((value & 0x04)) -ne 0 ]; then
+                echo "lcdctl: image displayed"
+                return 0
+            fi
+        fi
+        usleep 50000
+        count=$((count + 1))
+    done
+    echo "lcdctl: display timeout, status=$(read_reg "$LCD_STATUS")" >&2
+    return 1
+}
+
+case "$1" in
+    status) status ;;
+    show) shift; show_image "$1" ;;
+    bars) write_reg "$LCD_CTRL" 2; echo "lcdctl: hardware color bars" ;;
+    switch) write_reg "$LCD_CTRL" 0; echo "lcdctl: SW18/SW19 control restored" ;;
+    off) write_reg "$LCD_CTRL" 3; echo "lcdctl: panel backlight off" ;;
+    *) usage; exit 1 ;;
+esac

@@ -1,0 +1,42 @@
+{
+  "format_version": "npu_compile_config_v1",
+  "target": "npu_vgg_s2b_v1",
+  "model": {
+    "name": "npu_vgg_s2b",
+    "weights": "../../../../tiny_vgg_cnn/checkpoints/npu_s2b_cifar/tiny_vgg_best.pth",
+    "input_contract": "packed_preload_chw_3x34x34_u8_border128",
+    "output_contract": "class10_u8_scores"
+  },
+  "dataset": {
+    "root": "../../../../tiny_vgg_cnn/data"
+  },
+  "quant": {
+    "variant": "npu_s2b",
+    "tiny_vgg_root": "../../../../tiny_vgg_cnn",
+    "demo_input_bin": "../../../../tiny_vgg_cnn/artifacts/npu_vgg_s2b/input_chw_u8.bin",
+    "seed": 42,
+    "calib_samples": 1024,
+    "eval_samples": 0,
+    "batch_size": 128,
+    "activation_percentile": 99.9,
+    "activation_margin": 1.10,
+    "device": "cpu"
+  },
+  "outputs": {
+    "params_hex": "params/npu_vgg_s2b/npu_params.hex",
+    "quant_config": "params/npu_vgg_s2b/quant_config.json",
+    "microcode_hex": "sim/microcode_npu_vgg_s2b.hex",
+    "desc_hex": "scripts/npu_vgg_s2b_desc.hex",
+    "desc_header": "models/descriptors/npu_vgg_s2b_desc.h",
+    "demo_header": "models/fixtures/npu_vgg_s2b_input.h",
+    "compile_manifest": "params/npu_vgg_s2b/npu_compile_manifest.json",
+    "package": "models/packages/npu_vgg_s2b_v1.xnpu"
+  },
+  "integration": {
+    "sync_sim_desc_hex": "sim/npu_vgg_s2b_desc.hex"
+  },
+  "verify": {
+    "params": false,
+    "descriptors": true
+  }
+}
