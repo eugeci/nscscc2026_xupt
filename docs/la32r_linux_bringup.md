@@ -1637,3 +1637,62 @@ A/B 为：
 再覆盖 `61 62 63 0a`、单字节命令和不同发送间隔，同时无 overrun、无
 `nobody cared`。在此之前，前导空格只能作为软件/演示 workaround，不能算
 UART RX 已完全修复。
+
+### 自动 PID 1 正对照通过与剩余边界（2026-08-19）
+
+同一块板、同一份 IRQ hold 位流上，交互式
+`vmlinux_nand_disabled_rxtrig1_stripped` 曾出现三种冷启动结果：进入 shell 后
+UART RX 丢字/overrun、停在 `Run /init as init process`、以及内核态
+`Reserved instruction` 递归刷屏。为避免串口输入本身改变时序，改用完全不
+读取 console 的自动 initramfs 做正对照：
+
+```text
+kernel: vmlinux_auto_visionarm_nand_disabled_stripped
+entry:  0xa07b06e0
+size:   11475576 bytes
+sha256: 4ed30a6e435e64b8dfba03213f33acd75402c83520c3f62738cfdd02b2873167
+
+trampoline: linux_handoff_trampoline_a4f_auto_panic1
+entry:      0xa0100000 -> 0xa07b06e0
+bootargs:   console=ttyS0,115200 rdinit=/init print-fatal-signals=1 panic_on_oops=1
+size:       4380 bytes
+sha256:     e5e36bfdb929e86ac9d4b3edbd0ee9ef65668cad3b0a7697641cf4b251ce1ec8
+```
+
+板测完整输出了：
+
+```text
+AUTO_INIT_START pid=1 no-console-input-required
+AUTO_LS_PASS entries=7
+VISIONARM_TEST_BEGIN
+CAM_MAGIC_PASS
+LCD_BARS_REQUESTED ctrl=0x00000002 status=0x4c000405
+CAM_RUN status=0xc53a78fb activity=0x00000000->0x00000255
+CAM_ACTIVITY_PASS
+VISIONARM_TEST_PASS
+AUTO_INIT_DONE; PID 1 will remain alive forever
+```
+
+该结果证明当前位流至少能够完成一次 Linux 内核启动、执行自动用户态 PID 1、
+遍历 initramfs，并正确完成 camera/LCD MMIO magic、LCD 彩条请求和 camera 活动
+计数变化；本轮也没有 Oops。它同时证明外设寄存器窗口并非“完全不可访问”。
+但该测试只检查寄存器和活动计数，不等价于摄像头图像内容或 LCD 实际像素全链路
+正确，也不能排除仅在另一份内核布局/指令序列/中断时序下暴露的 DDR、ICache、
+AXI 或 WB 问题。
+
+因此当前边界不再是“Linux 普遍起不来”，而是：自动内核已有一次完整正向执行；
+`rxtrig1` 完整用户态镜像仍有非确定性停顿、UART 交互故障和一次内核保留指令
+递归。最优先的单变量 A/B 是把**同一个自动 PID 1** 注入 `rxtrig1` 内核，保持
+内核 ELF、入口、配置和位流不变，仅替换 initramfs：
+
+1. 若 `rxtrig1 + auto PID 1` 连续冷启动通过，问题集中在 BusyBox init/profile/
+   shell 与交互式 TTY 路径；继续查 UART RX timeout、FIFO pop 和 IRQ18 服务。
+2. 若仍停在 `Run /init` 或触发 Reserved instruction，问题与 shell 输入无关；
+   优先抓取 CPU commit PC/instruction、ICache 返回、AXI RID/RDATA、LSU/WB tag，
+   以及 IRQ take 到 ERTN 的 `ERA/PRMD/ESTAT`。
+3. 所有 Oops 测试使用 `panic_on_oops=1` 并开启 SecureCRT Log Session，使系统
+   停在第一次 `[#1]`；必须保留首个 EPC、RA、Code 和 CSR，后续递归现场无效。
+4. 自动正对照也要做至少 20 次断电冷启动，并确认周期性 alive marker；一次
+   成功只能建立可行性，不能证明随机硬件故障已经消失。
+5. 演示保底可暂用自动 PID 1 驱动 LCD/camera，不依赖 UART RX；完整 Linux 验收
+   仍要求正常 init 到 shell、无 Oops，并且无 padding 的 `ls\n` 连续通过。
