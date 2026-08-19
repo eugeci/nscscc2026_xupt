@@ -1696,3 +1696,44 @@ AXI 或 WB 问题。
    成功只能建立可行性，不能证明随机硬件故障已经消失。
 5. 演示保底可暂用自动 PID 1 驱动 LCD/camera，不依赖 UART RX；完整 Linux 验收
    仍要求正常 init 到 shell、无 Oops，并且无 padding 的 `ls\n` 连续通过。
+
+### MMIO 修复位流与 shell 风格自动演示（2026-08-19）
+
+远端 `2483b06 build(bringup): publish MMIO and IRQ fixed image` 固定 core
+`444c1db`、Chiplab 源码 `dd12226` 和位流提交 `25ae298`。新 BIT SHA256 为
+`237c2f69fc0807fcb4ef36727f4ecd969c9c5f73ccaa694e97072c65d4dceef2`，
+WNS 为 0.281 ns。该 core 保留 uncached 窄读的字节地址和 AXI size，避免
+`ld.bu IIR(+2)` 被扩大成从 `RBR(+0)` 开始的 32 位 APB 读；这与板上 `ls\n`
+丢首字节、前导空格能绕过的现象完全对应。
+
+新位流下，普通 BusyBox shell 已能完整回显 `ls`，证明原先的首字节错误已被
+修复；但 shell 在换行后没有目录输出，也不再响应 Ctrl-C。作为正对照，使用
+`vmlinux_demo_visionarm_nand_disabled_stripped`（SHA256
+`f48da5ac7dec24dd0589515d28599bd590ad3459877ba2eb35cc04ebf3dd5629`）后，
+单一静态 PID 1 自动完成并打印：
+
+```text
+LA32R Linux
+/ # ls
+bin  dev  etc  init  lib  media  proc  sbin  sys  tmp  usr  var  vision
+/ # lcdctl show
+lcdctl: test card displayed
+/ # cam on
+cam: camera DMA started
+/ # cam info
+...
+VisionArm demo  : PASS
+/ #
+```
+
+板上同时观察到彩条和摄像头画面。该自动版产生了远多于目录列表的连续 UART
+输出，并完成 camera/LCD MMIO 与 DMA 活动检查，因此普通 shell 的 `ls` 无输出
+不再优先指向 UART TX 或外设。两者最重要的差异是自动版始终在同一个静态 PID 1
+内执行，不调用 fork/exec；BusyBox shell 则必须创建子进程、切换用户地址空间并
+重新取指。剩余排查应优先做单变量三级探针：PID 1 `fork()+_exit()`、子进程
+`write()+_exit()`、子进程 `execve()`；并在每级记录 ASID/TLB、调度切换后的
+ERA/PRMD、用户取指 PA/指令和首个 page fault。只有 exec 级失败时再集中检查
+新进程 TLB invalidation、ICache 一致性和 ELF 用户页属性。
+
+注意：演示版最后的 `/ #` 只是固定界面。TTY 仍可能回显键盘字符和 `^H`，但
+PID 1 故意不读取输入，也不会执行这些字符；不得把回显误记为交互 shell 通过。

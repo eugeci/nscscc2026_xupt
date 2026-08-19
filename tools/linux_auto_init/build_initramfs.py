@@ -51,13 +51,36 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--init", required=True, type=pathlib.Path)
     parser.add_argument("--output", required=True, type=pathlib.Path)
+    parser.add_argument(
+        "--demo-layout",
+        action="store_true",
+        help="populate the shell-like VisionArm demonstration root layout",
+    )
     args = parser.parse_args()
 
     init_data = args.init.read_bytes()
     archive = bytearray()
     inode = 1
 
-    for directory in (".", "bin", "dev", "proc", "sys"):
+    directories = (".", "bin", "dev", "proc", "sys")
+    if args.demo_layout:
+        directories = (
+            ".",
+            "bin",
+            "dev",
+            "etc",
+            "lib",
+            "media",
+            "proc",
+            "sbin",
+            "sys",
+            "tmp",
+            "usr",
+            "var",
+            "vision",
+        )
+
+    for directory in directories:
         append_entry(
             archive,
             inode=inode,

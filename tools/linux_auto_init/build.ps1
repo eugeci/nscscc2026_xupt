@@ -1,6 +1,10 @@
 param(
     [string]$BaseVmlinux = "D:\openla500_run_linux\tftp-root\vmlinux_nand_disabled",
-    [string]$OutputDirectory = "artifacts\linux"
+    [string]$OutputDirectory = "artifacts\linux",
+    [string]$InitSource = "auto_init.c",
+    [string]$OutputName = "vmlinux_auto_visionarm_nand_disabled_stripped",
+    [string]$BuildDirectoryName = "build",
+    [switch]$DemoLayout
 )
 
 $ErrorActionPreference = "Stop"
@@ -22,13 +26,15 @@ if ($null -ne $PythonCommand) {
     throw "Python 3 was not found"
 }
 $OutputDirectory = Join-Path $RepositoryRoot $OutputDirectory
-$BuildDirectory = Join-Path $ScriptDirectory "build"
+$BuildDirectory = Join-Path $ScriptDirectory $BuildDirectoryName
 $InitElf = Join-Path $BuildDirectory "auto_init.elf"
 $Initramfs = Join-Path $BuildDirectory "auto_initramfs.cpio.gz"
-$Unstripped = Join-Path $BuildDirectory "vmlinux_auto_visionarm_nand_disabled"
-$Final = Join-Path $OutputDirectory "vmlinux_auto_visionarm_nand_disabled_stripped"
+$UnstrippedName = $OutputName -replace "_stripped$", ""
+$Unstripped = Join-Path $BuildDirectory $UnstrippedName
+$Final = Join-Path $OutputDirectory $OutputName
+$InitSourcePath = Join-Path $ScriptDirectory $InitSource
 
-foreach ($Required in @($Compiler, $Strip, $Nm, $Readelf, $BaseVmlinux)) {
+foreach ($Required in @($Compiler, $Strip, $Nm, $Readelf, $BaseVmlinux, $InitSourcePath)) {
     if (-not (Test-Path -LiteralPath $Required)) {
         throw "Required file not found: $Required"
     }
@@ -46,13 +52,22 @@ $CompilerArguments = @(
     "-Wl,--build-id=none",
     "-o",
     $InitElf,
-    (Join-Path $ScriptDirectory "auto_init.c")
+    $InitSourcePath
 )
 & $Compiler $CompilerArguments
 if ($LASTEXITCODE -ne 0) { throw "auto_init compile failed" }
 
-& $Python (Join-Path $ScriptDirectory "build_initramfs.py") `
-    --init $InitElf --output $Initramfs
+$InitramfsArguments = @(
+    (Join-Path $ScriptDirectory "build_initramfs.py"),
+    "--init",
+    $InitElf,
+    "--output",
+    $Initramfs
+)
+if ($DemoLayout) {
+    $InitramfsArguments += "--demo-layout"
+}
+& $Python $InitramfsArguments
 if ($LASTEXITCODE -ne 0) { throw "initramfs build failed" }
 
 & $Python (Join-Path $ScriptDirectory "patch_vmlinux.py") `
