@@ -1549,3 +1549,33 @@ irqchip mask/ack，因此大概率不能解决当前重复 IRQ18；它对 WB rep
 覆盖有价值，但与本次 UART IRQ 根因是两个不同问题。并且当前主仓库
 `bringup/la32r-linux` 的 core gitlink 仍为 `6e5d375`，尚未固定 `63041c7`；即使
 重新使用当前主仓库生成 bitstream，也不会自动包含这份 core 提交。
+
+#### 后续中断定向修复 `d63527e` / `f5ec5f1`
+
+上述判断只针对 `63041c7`。队友随后在 core 推送了真正命中本问题的
+`d63527e fix(la32r): preserve external IRQs across frontend gaps`：
+
+- `timer_irq_hold` 改为只要 `timer_irq_request` 有效就锁存，不再要求
+  `id_valid`；
+- `frontend_flush` 不再清除等待 backend drain 的中断请求；
+- `effective_is` 改用 CPU 时钟域寄存后的 `csr_estat[12:0]`，不再把顶层
+  `irq_pending` 直接送入请求组合路径；
+- 新增 ID empty + frontend flush + backend drain 的 UART IRQ replay 测试。
+
+Chiplab 随后推送 `f5ec5f1 fix(fpga): constrain external IRQ synchronizers`，给
+`int_sync_meta/int_sync_cpu` 同时增加：
+
+```systemverilog
+(* ASYNC_REG = "TRUE", SHREG_EXTRACT = "NO" *)
+```
+
+这两份修改分别覆盖“CPU 内部请求保持”和“soc_top CDC 物理实现约束”，与旧版
+Linux 短命令不触发、直到 overrun 才偶尔进入 IRQ18 的现象高度吻合，因而有
+较大概率修复**正常 IRQ 模式**的 UART RX。它们不会让 `irq=0` 轮询镜像停止
+`nobody cared`：该镜像故意不给 IRQ18 注册 handler，却仍使能 UART IER；应在
+新位流上改回 `vmlinux_nand_disabled_rxtrig1_stripped` 做第一轮验证，启动日志
+必须恢复 `irq = 18`。
+
+截至记录时，主仓库 `bringup/la32r-linux` 仍未固定 core `d63527e` 和 Chiplab
+`f5ec5f1`，也未发布由这两个提交共同生成的新 bitstream。只有新位流明确记录
+这两个 SHA 后，下板结果才能用于判定该修复是否成功。

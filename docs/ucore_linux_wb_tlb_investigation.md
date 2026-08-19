@@ -304,3 +304,12 @@ hwirq2，或在 IER=0 时直接轮询 LSR/RBR。
 远端 core `63041c7` 只把 `6e5d375` 已有的 WB repair 保持器独立成模块并增加
 测试，capture/clear 优先级未改变，且没有触及 UART/IRQ/CSR/irqchip。它不会
 直接解决反复 IRQ18；当前 bringup 主仓库的 core 指针也仍停在 `6e5d375`。
+
+注意：队友在其后又推送了与 `63041c7` 不同的 core `d63527e` 和 Chiplab
+`f5ec5f1`。前者让外部 IRQ request 脱离 `id_valid` 锁存、禁止 frontend flush
+清掉 hold，并使用寄存后的 `CSR.ESTAT`；后者为 soc_top 两级同步器增加
+`ASYNC_REG/SHREG_EXTRACT=NO`。这组修改确实对应本文指出的 frontend gap/CDC
+嫌疑，较大概率能修复正常 IRQ18 接收。验证时不能继续使用 IRQ0 polling
+kernel，而应使用 `vmlinux_nand_disabled_rxtrig1_stripped`，确认日志为
+`ttyS0 ... irq = 18` 后测试短命令。主仓库需先同时固定这两个 SHA 并重新生成
+bitstream，不能用旧位流判断。
