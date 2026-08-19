@@ -16,6 +16,11 @@
 本组文件对应当前已经在板上验证的 NPU/Linux 路径。`visionarm_npu_soc_top.bit`
 提供 NPU、摄像头、LCD 和 VGA 外设；本次软件提交不修改比特流或 CPU RTL。
 
+本次同步用微信暂存包中的最新 `vmlinux_visionarm_xnpu` 替换了仓库旧镜像，
+SHA256 为 `067f7a2aadb83075de3acfd2ebc80dfb21fa7791e4570cf4a2c9d6cb56a65c65`。
+该通用展示镜像尚未在本轮板测中复测；需要稳定复现时仍使用下方的
+`vmlinux_visionarm_xnpu_rxtrig1_nojob` 与配套跳板。
+
 在 PMON 中按顺序执行（TFTP 根目录应包含下面两个文件）：
 
 ```text
