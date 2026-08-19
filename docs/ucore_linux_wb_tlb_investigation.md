@@ -246,8 +246,16 @@ Windows TFTP 文件名为 `vmlinux_nand_disabled_rxtrig1_stripped`，启动命�
 ```text
 ifconfig dmfe0 192.168.1.101
 load tftp://192.168.1.100/vmlinux_nand_disabled_rxtrig1_stripped
-load tftp://192.168.1.100/linux_handoff_trampoline_a4f
+load tftp://192.168.1.100/linux_handoff_trampoline_a4f_rxtrig1
 g
+```
+
+这里不能复用旧 `linux_handoff_trampoline_a4f`：旧跳板硬编码内核入口
+`0xa07b06e0`，而本镜像入口是 `0xa07c4d78`。专用跳板由
+`tools/linux_handoff_trampoline/` 生成，反汇编确认 `r12=0xa07c4d78`：
+
+```text
+ed5516081e87c4e36a69b81a7fb69f56523305bce11e35c8e8732a9679b3e18a  linux_handoff_trampoline_a4f_rxtrig1
 ```
 
 提示符出现后只发送一次 `ls` 和回车：
@@ -255,5 +263,5 @@ g
 - 能立即执行且无 overrun：UART RDA trigger=1 可用，优先修 UART timeout；
 - 仍 overrun/无响应：不是 FIFO 阈值过高这一单点，继续查 `uart0_int`、CDC、
   `timer_irq_hold/take` 和 Linux IRQ18；
-- 连提示符都到不了：先检查启动版本是否包含 `-uart-rxtrig1`，不要把不同
-  initramfs/旧 TFTP 同名文件造成的启动差异算进 RX A/B。
+- 连提示符都到不了：先检查是否误用了跳往 `0xa07b06e0` 的旧跳板，再检查
+  启动版本是否包含 `-uart-rxtrig1`；不要把旧 TFTP 文件算进 RX A/B。

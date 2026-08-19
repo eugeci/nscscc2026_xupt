@@ -34,7 +34,15 @@ release: 5.14.0-rc2-uart-rxtrig1
 entry: 0xa07c4d78
 ```
 
-The image was copied to `D:\openla500_run_linux\tftp-root`.  Boot it with the
-`linux_handoff_trampoline_a4f` trampoline.  If input starts working, the fault
-is narrowed to the UART receiver-timeout/trigger behavior rather than the
-Linux TTY, MMU, DDR, or initramfs.
+The image was copied to `D:\openla500_run_linux\tftp-root`. Its ELF entry is
+`0xa07c4d78`, while the older `linux_handoff_trampoline_a4f` hard-codes
+`0xa07b06e0`; using that old trampoline stops before any Linux output. Use the
+matching generated trampoline instead:
+
+```text
+ed5516081e87c4e36a69b81a7fb69f56523305bce11e35c8e8732a9679b3e18a  linux_handoff_trampoline_a4f_rxtrig1
+```
+
+If input starts working with the matching trampoline, the fault is narrowed
+to the UART receiver-timeout/trigger behavior rather than the Linux TTY, MMU,
+DDR, or initramfs.

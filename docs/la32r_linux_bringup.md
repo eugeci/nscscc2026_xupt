@@ -1325,6 +1325,11 @@ UART_RX
 补丁、启动命令和结果判定见 `docs/ucore_linux_wb_tlb_investigation.md` 的
 “8250 trigger=1 镜像已构建”一节。
 
+首次板测错误复用了硬编码入口 `0xa07b06e0` 的旧 a4f 跳板，因而停在 PMON
+参数打印后、未进入新内核；这不是 trigger=1 结果。已增加可配置入口的
+`tools/linux_handoff_trampoline/`，并为新内核入口 `0xa07c4d78` 生成
+`linux_handoff_trampoline_a4f_rxtrig1`。后续 A/B 只认可专用跳板的结果。
+
 ### 外部中断同步修复版 bitstream（2026-08-19）
 
 为验证上述第一嫌疑，使用主仓库 `254be433583b9cf91b72ad9dcf78b495e14b46e3`、
