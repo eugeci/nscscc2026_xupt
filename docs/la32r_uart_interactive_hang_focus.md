@@ -193,3 +193,67 @@ timer_irq_take, ex_return_fire, csr_era
 
 第一优先级不是修改代码，而是用“真实 IER 始终开启、字符分时到达、动态读取
 IIR”的仿真先复现板上卡死。能够复现后，再在上述 P0 点做单变量修复。
+
+## 2026-08-19 最小交互 init 板测结论
+
+在原 trigger=1 核心镜像的 438 项 initramfs 中，仅替换 `/init`。新 init
+按顺序挂载 devtmpfs、proc、sysfs 和 devpts，然后使用 BusyBox `setsid`
+直接在 `/dev/ttyS0` 上建立交互 shell，绕过原 `/etc/profile` 和
+login-shell job-control 初始化。源脚本为：
+
+```text
+tools/linux_auto_init/interactive_checkpoint_init.sh
+```
+
+板上连续打印：
+
+```text
+INIT_CP1_CONSOLE_READY
+INIT_CP2_PROC_READY rc:0
+INIT_CP3_SYS_READY rc:0
+INIT_CP4_DEVPTS_READY rc:0
+INIT_CP5_EXEC_INTERACTIVE_SH
+/ #
+```
+
+真实交互执行 `echo X`、`ls` 和 `pwd` 全部成功。这进一步排除首次
+用户态进入、动态 BusyBox、基础 fork/exec、文件系统和 UART RX/TX 通用
+路径。原镜像的“`Run /init` 后时好时坏”现在优先对比原 `/init`、
+`/etc/profile` 和控制终端/job-control 建立过程，不应继续归因于通用
+DDR/TLB/WB repair。
+
+已验证的第一版本地生成物（大文件不入库）：
+
+```text
+file:   vmlinux_rxtrig1_interactive_ctty_stripped
+size:   9854900
+sha256: d1d76f69534344dd7ca31e6a9b1b7b8e332668534524b7f08008e4919d85cc88
+entry:  0xa07c4d78
+```
+
+该版可交互，但仍打印 `can't access tty; job control turned off`，因此
+`Ctrl+C` 不能作为硬件卡死的证据。当前源脚本已改为对
+`/dev/ttyS0` 执行 `setsid -c`，待板测的第二版生成物为：
+
+```text
+file:   vmlinux_rxtrig1_interactive_ctty2_stripped
+size:   9854900
+sha256: d138c350c1c703c2f057c7cdbd3d547b81cc1da0c54645056c76db6b6914bee9
+entry:  0xa07c4d78
+```
+
+### 摄像头板测更新
+
+不使用复杂 `cam` 脚本，而是直接拆分 MMIO 后，板上结果为：
+
+```text
+devmem 0x1fd0e100 32 1  -> 返回
+control                 -> 0x00000001
+status                  -> 0xc53a78fb
+activity                -> 0x000006ce -> 0x000009ab
+```
+
+摄像头随后正常亮起并完成演示。因此 camera CONFREG 读写、AXI
+写响应、DMA、DDR 数据流和显示输出已通过板测。早先 `cam on`/
+`cam status` 无法返回不应归因于 camera AXI 死锁，优先简化脚本中的
+重复 command substitution，并在有效 controlling TTY 上重测信号处理。

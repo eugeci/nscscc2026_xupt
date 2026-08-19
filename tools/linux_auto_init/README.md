@@ -107,3 +107,30 @@ python .\tools\linux_auto_init\replace_newc_entry.py `
 `BB0_SHELL_START`, `BB1_ECHO_PASS`, a root directory listing and
 `BB2_LS_RC:0` together prove that the original dynamic loader, libc, BusyBox,
 rootfs, fork/exec/wait and `ls` directory traversal work without UART RX.
+
+## Interactive checkpoint init
+
+`interactive_checkpoint_init.sh` is a board-diagnostic replacement for the
+original initramfs `/init`. It mounts devtmpfs, proc, sysfs and devpts, prints a
+checkpoint after each step, then uses the preserved original BusyBox `setsid`
+applet to claim `/dev/ttyS0` as the controlling terminal and start a real
+interactive shell without sourcing `/etc/profile`.
+
+Patch only `/init` in the verified trigger-one image:
+
+```powershell
+python .\tools\linux_auto_init\replace_newc_entry.py `
+  --base D:\openla500_run_linux\tftp-root\vmlinux_nand_disabled_rxtrig1_stripped `
+  --entry init `
+  --replacement .\tools\linux_auto_init\interactive_checkpoint_init.sh `
+  --output D:\openla500_run_linux\tftp-root\vmlinux_rxtrig1_interactive_ctty2_stripped
+```
+
+The first 2026-08-19 board image, before the explicit `setsid -c` update, has
+SHA256 `d1d76f69534344dd7ca31e6a9b1b7b8e332668534524b7f08008e4919d85cc88`.
+It reached all five init checkpoints, interactively completed `echo X`, `ls`
+and `pwd`, and subsequently demonstrated LCD and camera operation. It still
+reported that job control was disabled. The current `setsid -c` source builds
+`vmlinux_rxtrig1_interactive_ctty2_stripped` with SHA256
+`d138c350c1c703c2f057c7cdbd3d547b81cc1da0c54645056c76db6b6914bee9`;
+its controlling-TTY behavior remains to be confirmed on the board.
