@@ -1033,16 +1033,17 @@ irom_req_addr, refill_buffer_line_addr_q, refill line data
 板级通过标准也应改为“冷复位后第一次 exec 即成功”。第二次或后续 `ls`
 成功只能证明系统能够通过 cache/page 状态变化绕过首错，不能视为修复。
 
-### MAT=0 对照实验：问题继续收敛到取指存储属性链路
+### MAT=0 对照实验纠正：板上 PTE 证明该实验尚未生效
 
 在同一个 `a140b4a`/core `6e5d375` bitstream 上又完成了两组软件对照：
 
 1. 将 `fence_i()` 改为 DCache 两个 way 完成后增加第二道 `DBAR`，再做
    ICache invalidate 和 `IBAR`；第一次 `ls` 仍失败，第二次成功；
-2. 在 `load_icode()` 给用户可执行页 PTE 增加 `PTE_PCD`，并修改
-   `la32_tlb.c`，使该页写入 TLBELO 时不再附加 `MAT=coherent cached`，即
-   用户代码页以 `MAT=0` 取指；第一次 `ls` 仍在相同用户入口附近 RI，第二次
-   `ls` 和随后 `cat test.txt` 正常。
+2. 曾计划在 `load_icode()` 给用户可执行页 PTE 增加 `PTE_PCD`，并修改
+   `la32_tlb.c`，使该页写入 TLBELO 时不再附加 `MAT=coherent cached`。
+   但板上 RI 诊断实际打印 `Code PTE=...005`，不含 uCore 定义的
+   `PTE_PCD=0x010`；真正生效时应至少为 `...015`。因此这次板测不能证明
+   用户代码页以 `MAT=0` 取指，原先据此推断 TLB/ICache 的结论撤回。
 
 板测文件及 SHA256：
 
@@ -1052,9 +1053,9 @@ irom_req_addr, refill_buffer_line_addr_q, refill line data
 ```
 
 第一组排除了“只缺少 DCache writeback 与 ICache invalidate 之间的一条屏障”
-这一简单解释。第二组比普通 cache flush A/B 更关键：若 TLB 的 MAT=0 已正确
-传到取指端，ICache 不应命中旧 cached line，而应走 uncached fetch；该路径
-仍首错，说明当前最高概率边界是以下两类之一：
+这一简单解释。第二组属于无效对照，必须先修正软件构建/映射并取得最终 PTE、
+TLBELO、`mmu_inst_mat` 和 `irom_req_cacheable` 四级一致的证据。只有这些证据
+成立后仍首错，才可继续在以下两类硬件边界中判断：
 
 - TLB 中的 `MAT=0` 没有稳定传到 `mmu_inst_mat`/
   `irom_req_cacheable`，取指仍被错误地按 cacheable 请求处理；
@@ -1090,8 +1091,13 @@ ICache refill owner、killed 标记、line address 和写入数据
 - AXI `RDATA` 正确而送入译码的指令错：问题已固定在 ICache/取指返回路径。
 
 这组结果不证明 DDR 完全无问题，但已证明内核、initrd、shell、第二次用户
-exec 和普通数据读取可工作；当前不应再把“镜像损坏”列为第一嫌疑。仓库中
-可直接复现的两个 ELF 及完整命令见 `artifacts/ucore/README.md`。
+exec 和普通数据读取可工作；不支持“所有镜像整体损坏”的解释。不过
+`uncached-pte` 这一个定位镜像的补丁/构建确实需要重新核验。仓库中可直接
+复现的两个 ELF 及完整命令见 `artifacts/ucore/README.md`。
+
+2026-08-19 的 uCore/Linux、WB repair entry-edge 和 TLB/MAT 联合复核见
+`docs/ucore_linux_wb_tlb_investigation.md`。其中也给出了 Linux 8250
+trigger=1、关 FIFO 和 polling 的软件 A/B，以及 WB A→B 同拍切换的定向仿真。
 
 ## WB repair 修复版 Linux/a4f 复测（2026-08-19）
 

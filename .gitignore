@@ -29,3 +29,7 @@ ucli.key
 /vivado*.jou
 /vivado*.log
 **/__pycache__/
+
+# Generated Linux automatic-init artifacts (rebuild from tools/linux_auto_init)
+/tools/linux_auto_init/build/
+/artifacts/linux/vmlinux_*

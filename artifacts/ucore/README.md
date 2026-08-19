@@ -5,8 +5,10 @@
 
 - `ucore-kernel-initrd-visionarm-fallback.elf`：新增 `cam/lcdctl/vga`的保底镜像；
 - `ucore-kernel-initrd-polling-2way-memdiag.elf`：板测基线，可输入命令；
-- `ucore-kernel-initrd-polling-2way-memdiag-uncached-pte.elf`：把用户可执行页
-  的 TLB MAT 设为 uncached 的定位镜像；
+- `ucore-kernel-initrd-polling-2way-memdiag-uncached-pte.elf`：原计划把用户
+  可执行页的 TLB MAT 设为 uncached 的定位镜像；但板上打印的最终
+  `Code PTE=...005` 不含 `PTE_PCD=0x010`，当前只能视为“待验证构建”，
+  不能作为 MAT=0 已生效的证据；
 - `ucore-kernel-initrd-fence-fix.bin`：早期裸二进制镜像；
 - `ucore-kernel-initrd-fence-fix-diag.bin`：早期裸二进制诊断镜像。
 
@@ -66,9 +68,12 @@ load tftp://192.168.1.100/ucore-kernel-initrd-polling-2way-memdiag-uncached-pte.
 g
 ```
 
-该镜像的第一次 `ls` 仍失败而第二次成功，说明只把用户代码页改成 MAT=0
-不能绕过问题，需继续检查 TLB MAT 到 ICache/AXI 取指请求的硬件传播和响应
-归属。
+注意：此前把“第一次 `ls` 仍失败、第二次成功”解释为“MAT=0 不能绕过”并不
+成立。板上 RI 诊断打印的 `Code PTE` 低位为 `0x005`，而软件定义
+`PTE_PCD=0x010`；真正设置后的 PTE 应至少以 `0x015` 结尾。下一版必须同时
+打印最终 PTE、refill 输入 PTE 和 TLBRD 后的 TLBELO，确认 `MAT[5:4]=00` 后
+才能继续判断 TLB/ICache。完整纠正和仿真清单见
+`docs/ucore_linux_wb_tlb_investigation.md`。
 
 早期 `.bin` 文件不是 ELF。若确需使用，应以 PMON 的 raw load base 选项装到
 `0xa0000000` 后从该地址运行；不要写成 `load -r -f 0xa0000000 ...`，因为
